@@ -64,6 +64,16 @@ class MlirReductionFusion : public MlirFusionEmitterBase {
   struct EmitterState;
   friend struct EmitterState;
 
+  struct ThreadInfo {
+    mlir::SmallVector<mlir::Value> thread_ids;
+    mlir::Value thread_id;
+    mlir::Value warp_id;
+    mlir::Value lane_id;
+  };
+  ThreadInfo GetThreadInfo(
+      mlir::ImplicitLocOpBuilder& b,
+      const mlir::SmallVector<mlir::Value>& thread_and_block_ids) const;
+
   absl::Status EmitEntryFunction(
       const mlir_converter::PartitionedComputations& computations,
       const mlir_converter::CallTargetProvider& call_targets,
@@ -83,6 +93,9 @@ class MlirReductionFusion : public MlirFusionEmitterBase {
 
   virtual llvm::SmallVector<mlir::Value> EmitReduction(
       int group_id, EmitterState& state) const = 0;
+
+  virtual mlir::Value GetWarpIdByWarpSize(
+      mlir::ImplicitLocOpBuilder& b, const ThreadInfo& thread_info) const = 0;
 
   Shape GetReduceOperandShape() const {
     return first_reduce_->operand(0)->shape();
@@ -123,6 +136,8 @@ class MlirRowReductionFusion : public MlirReductionFusion {
 
  protected:
   int GetRowsPerWarp() const override;
+  mlir::Value GetWarpIdByWarpSize(mlir::ImplicitLocOpBuilder& b,
+                                  const ThreadInfo& thread_info) const override;
 
   llvm::SmallVector<mlir::Value> EmitReduction(
       int group_id, EmitterState& state) const override;
@@ -137,6 +152,8 @@ class MlirColumnReductionFusion : public MlirReductionFusion {
 
  protected:
   int GetRowsPerWarp() const override;
+  mlir::Value GetWarpIdByWarpSize(mlir::ImplicitLocOpBuilder& b,
+                                  const ThreadInfo& thread_info) const override;
 
   llvm::SmallVector<mlir::Value> EmitReduction(
       int group_id, EmitterState& state) const override;
