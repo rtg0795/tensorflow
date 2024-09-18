@@ -17,10 +17,13 @@ limitations under the License.
 #define TENSORFLOW_COMPILER_MLIR_LITE_STABLEHLO_TRANSFORMS_PASSES_H_
 
 #include <memory>
+#include <string>
+#include <utility>
 
 #include "mlir/Dialect/Func/IR/FuncOps.h"  // from @llvm-project
 #include "mlir/IR/BuiltinOps.h"  // from @llvm-project
 #include "mlir/Pass/Pass.h"  // from @llvm-project
+#include "stablehlo/transforms/Passes.h"  // from @stablehlo
 
 namespace mlir {
 namespace odml {
@@ -77,6 +80,13 @@ std::unique_ptr<OperationPass<func::FuncOp>> CreateFoldBroadcastingOpPass();
 // Adds the HLO to TF rewrite patterns to the specified pattern list.
 void PopulateLegalizeHloToTfPatterns(RewritePatternSet* patterns,
                                      MLIRContext* context);
+
+inline std::unique_ptr<::mlir::Pass>
+createStablehloCreateCompatibilityExpanderPass(
+    std::string targetVersionOption) {
+  return mlir::stablehlo::createStablehloCreateCompatibilityExpanderPass(
+      {std::move(targetVersionOption)});
+}
 
 #define GEN_PASS_DECL
 #define GEN_PASS_REGISTRATION

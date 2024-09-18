@@ -296,6 +296,7 @@ cc_library(
         "@llvm-project//mlir:Support",
         "@llvm-project//mlir:TransformUtils",
         "@stablehlo//:stablehlo_ops",
+        "@stablehlo//:stablehlo_passes",
     ],
     alwayslink = 1,
 )
@@ -322,8 +323,8 @@ cc_library(
         "@llvm-project//mlir:ShapeDialect",
         "@llvm-project//mlir:Support",
         "@llvm-project//mlir:TransformUtils",
-        "@llvm-project//mlir:Transforms",
         "@local_xla//xla/mlir_hlo",
+        "@stablehlo//:stablehlo_passes",
     ],
     alwayslink = 1,
 )
@@ -347,8 +348,8 @@ cc_library(
         "@llvm-project//mlir:Pass",
         "@llvm-project//mlir:Support",
         "@llvm-project//mlir:TransformUtils",
-        "@llvm-project//mlir:Transforms",
         "@local_xla//xla/mlir_hlo",
+        "@stablehlo//:stablehlo_passes",
     ],
     alwayslink = 1,
 )
@@ -375,6 +376,7 @@ cc_library(
         "@llvm-project//mlir:Support",
         "@llvm-project//mlir:TransformUtils",
         "@local_xla//xla/mlir_hlo",
+        "@stablehlo//:stablehlo_passes",
     ],
     alwayslink = 1,
 )
@@ -402,8 +404,8 @@ cc_library(
         "@llvm-project//mlir:ShapeDialect",
         "@llvm-project//mlir:Support",
         "@llvm-project//mlir:TransformUtils",
-        "@llvm-project//mlir:Transforms",
         "@local_xla//xla/mlir_hlo",
+        "@stablehlo//:stablehlo_passes",
     ],
     alwayslink = 1,
 )
@@ -427,8 +429,8 @@ cc_library(
         "@llvm-project//mlir:Pass",
         "@llvm-project//mlir:QuantOps",
         "@llvm-project//mlir:Support",
-        "@llvm-project//mlir:Transforms",
         "@local_xla//xla/mlir_hlo",
+        "@stablehlo//:stablehlo_passes",
     ],
     alwayslink = 1,
 )
@@ -476,6 +478,7 @@ cc_library(
         "-Ithird_party",
     ],
     deps = [
+        ":legalize_stablehlo_custom_call_to_composite",
         "//tensorflow/compiler/mlir/lite:tensorflow_lite",
         "@flatbuffers",
         "@llvm-project//llvm:Support",
@@ -485,6 +488,7 @@ cc_library(
         "@llvm-project//mlir:Support",
         "@llvm-project//mlir:TransformUtils",
         "@stablehlo//:stablehlo_ops",
+        "@stablehlo//:stablehlo_passes",
     ],
     alwayslink = 1,
 )
@@ -553,6 +557,7 @@ cc_library(
         "@llvm-project//mlir:TransformUtils",
         "@llvm-project//mlir:Transforms",
         "@stablehlo//:stablehlo_ops",
+        "@stablehlo//:stablehlo_passes",
     ],
     alwayslink = 1,
 )
@@ -577,6 +582,7 @@ cc_library(
         "@llvm-project//mlir:Support",
         "@llvm-project//mlir:TransformUtils",
         "@local_xla//xla/mlir_hlo",
+        "@stablehlo//:stablehlo_passes",
     ],
     alwayslink = 1,
 )
@@ -606,6 +612,7 @@ cc_library(
         "@llvm-project//mlir:TransformUtils",
         "@stablehlo//:base",
         "@stablehlo//:stablehlo_ops",
+        "@stablehlo//:stablehlo_passes",
     ],
     alwayslink = 1,
 )
@@ -687,6 +694,7 @@ cc_library(
         "@llvm-project//mlir:Support",
         "@llvm-project//mlir:TransformUtils",
         "@local_xla//xla/mlir_hlo",
+        "@stablehlo//:stablehlo_passes",
     ],
     alwayslink = True,
 )
@@ -736,6 +744,7 @@ cc_library(
         "@llvm-project//mlir:Support",
         "@llvm-project//mlir:TransformUtils",
         "@local_xla//xla/mlir_hlo",
+        "@stablehlo//:stablehlo_passes",
     ],
     alwayslink = True,
 )
@@ -761,6 +770,7 @@ cc_library(
         "@llvm-project//mlir:TransformUtils",
         "@stablehlo//:chlo_ops",
         "@stablehlo//:stablehlo_ops",
+        "@stablehlo//:stablehlo_passes",
     ],
     alwayslink = 1,
 )
@@ -805,6 +815,7 @@ cc_library(
         "@local_xla//xla/mlir_hlo",
         "@stablehlo//:broadcast_utils",
         "@stablehlo//:chlo_ops",
+        "@stablehlo//:stablehlo_passes",
     ],
 )
 
@@ -896,6 +907,7 @@ cc_library(
         "@llvm-project//mlir:Support",
         "@llvm-project//mlir:TransformUtils",
         "@local_xla//xla/mlir_hlo",
+        "@stablehlo//:stablehlo_passes",
     ],
     alwayslink = True,
 )
@@ -917,6 +929,7 @@ cc_library(
         "@llvm-project//mlir:Support",
         "@llvm-project//mlir:TransformUtils",
         "@stablehlo//:stablehlo_ops",
+        "@stablehlo//:stablehlo_passes",
     ],
     alwayslink = 1,
 )
