@@ -1681,6 +1681,12 @@ class HloInstruction {
   // Decomposes fusion back to individual parts.
   absl::Status Defuse();
 
+  // Unfuses the given instruction from its fusion computation. If the given
+  // instruction is not fused, this is a no-op and returns nullptr. Returns a
+  // pointer to the newly unfused instruction if successful, nullptr otherwise.
+  absl::StatusOr<HloInstruction*> UnfuseInstruction(
+      HloInstruction* instruction);
+
   // Replaces all uses of this instruction with the new producer. If
   // new_producer is a user of this instruction then new_producer remains a use
   // of this instruction to avoid introducing cycles into the graph.
