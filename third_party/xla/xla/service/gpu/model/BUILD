@@ -506,6 +506,7 @@ xla_cc_test(
     deps = [
         ":affine_map_printer",
         ":indexing_analysis",
+        ":indexing_map_serialization",
         ":indexing_test_utils",
         "//xla/hlo/ir:hlo",
         "//xla/tests:hlo_test_base",
