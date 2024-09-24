@@ -3434,7 +3434,9 @@ ENTRY %Reduce (input: f32[8,16,256]) -> f32[8,16] {
 
   absl::StatusOr<std::unique_ptr<HloModule>> module =
       ParseAndReturnUnverifiedModule(
-          original, /*set_to_default_entry_computation_layout=*/false);
+          original,
+          HloParserOptions().set_force_normalized_module_parameters_layout(
+              false));
   TF_ASSERT_OK(module.status());
   // Do not set the default layout.
   EXPECT_FALSE(module.value()->entry_computation_layout().AnyLayoutSet());

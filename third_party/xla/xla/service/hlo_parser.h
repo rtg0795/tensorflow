@@ -24,10 +24,26 @@ limitations under the License.
 #include "xla/hlo/ir/hlo_computation.h"
 #include "xla/hlo/ir/hlo_instruction.h"
 #include "xla/hlo/ir/hlo_module.h"
-#include "xla/service/hlo_lexer.h"
 #include "xla/xla_data.pb.h"
 
 namespace xla {
+
+class HloParserOptions {
+ public:
+  // If true (default), the parser will reset the module's
+  // entry_computation_layout's shape layouts to be normalized (e.g. {3,2,1,0}).
+  HloParserOptions& set_force_normalized_module_parameters_layout(bool value) {
+    force_normalized_module_parameters_layout_ = value;
+    return *this;
+  }
+
+  bool force_normalized_module_parameters_layout() const {
+    return force_normalized_module_parameters_layout_;
+  }
+
+ private:
+  bool force_normalized_module_parameters_layout_ = true;
+};
 
 // Given a string in the HloModule::ToString() format, parses the string and
 // creates a HloModule with the given config.
@@ -35,14 +51,15 @@ namespace xla {
 // ParseAndReturnVerifiedModule() instead!
 absl::StatusOr<std::unique_ptr<HloModule>> ParseAndReturnUnverifiedModule(
     absl::string_view str, const HloModuleConfig& config,
-    bool set_to_default_entry_computation_layout = true);
+    const HloParserOptions& options = HloParserOptions());
 
 // Given a string in the HloModule::ToString() format, parses the string and
 // creates a HloModule with default config.
 // Note: Tests derived from HloTestBase should use
 // ParseAndReturnVerifiedModule() instead!
 absl::StatusOr<std::unique_ptr<HloModule>> ParseAndReturnUnverifiedModule(
-    absl::string_view str, bool set_to_default_entry_computation_layout = true);
+    absl::string_view str,
+    const HloParserOptions& options = HloParserOptions());
 
 // Parses sharding from str. str is supposed to contain the body of the
 // sharding, i.e. just the rhs of the "sharding={...}" attribute string, e.g.,
