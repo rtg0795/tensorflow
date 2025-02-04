@@ -1175,6 +1175,24 @@ xla_test(
 )
 
 xla_test(
+    name = "get_default_platform_test",
+    srcs = ["get_default_platform_test.cc"],
+    disabled_backends = [
+        "cpu",
+        "gpu",
+        "interpreter",
+    ],
+    tags = [
+        "test_migrated_to_hlo_runner_pjrt",
+    ],
+    deps = [
+        "//xla/service:platform_util",
+        "//xla/tsl/platform:test",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+xla_test(
     name = "scatter_test",
     srcs = ["scatter_test.cc"],
     tags = ["test_xla_cpu_no_thunks"],

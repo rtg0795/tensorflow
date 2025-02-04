@@ -326,6 +326,16 @@ def xla_test(
             for lib_dep in xla_test_library_deps:
                 backend_deps += ["%s_%s" % (lib_dep, backend)]  # buildifier: disable=list-append
 
+        if ("test_migrated_to_hlo_runner_pjrt" in this_backend_tags) or \
+           ("--tpu_use_tfrt=true" in this_backend_args):
+            flag_to_add = "--xla_allow_get_default_platform=false"
+            if "env" not in this_backend_kwargs:
+                this_backend_kwargs["env"] = {}
+            if "XLA_FLAGS" not in this_backend_kwargs["env"]:
+                this_backend_kwargs["env"]["XLA_FLAGS"] = flag_to_add
+            else:
+                this_backend_kwargs["env"]["XLA_FLAGS"] += " " + flag_to_add
+
         xla_cc_test(
             name = test_name,
             srcs = srcs,
