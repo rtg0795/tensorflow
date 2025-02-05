@@ -684,6 +684,7 @@ cc_library(
         ":xla_data_proto_cc",
         "//xla/tsl/lib/core:bitmap",
         "@com_google_absl//absl/functional:function_ref",
+        "@com_google_absl//absl/random:distributions",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",
