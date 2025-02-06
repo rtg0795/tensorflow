@@ -1,3 +1,23 @@
+diff --ruN a/stablehlo/BUILD.bazel b/stablehlo/BUILD.bazel
+--- stablehlo/BUILD.bazel
++++ stablehlo/BUILD.bazel
+@@ -519,8 +519,6 @@
+         "stablehlo/conversions/linalg/transforms/StablehloToLinalgRandom.cpp",
+         "stablehlo/conversions/linalg/transforms/StablehloToLinalgReduce.cpp",
+         "stablehlo/conversions/linalg/transforms/TypeConversion.cpp",
+-        "stablehlo/transforms/conversions/TypeConversion.cpp",
+-        "stablehlo/transforms/conversions/TypeConversion.h",
+     ],
+     hdrs = [
+         "stablehlo/conversions/linalg/transforms/LegalizeToLinalgUtils.h",
+@@ -531,6 +529,7 @@
+     ],
+     strip_include_prefix = ".",
+     deps = [
++        "stablehlo_type_conversions",
+         ":base",
+         ":chlo_ops",
+         ":linalg_pass_inc_gen",
 diff --ruN a/stablehlo/stablehlo/conversions/tosa/tests/binary.mlir b/stablehlo/stablehlo/conversions/tosa/tests/binary.mlir
 --- stablehlo/stablehlo/conversions/tosa/tests/binary.mlir
 +++ stablehlo/stablehlo/conversions/tosa/tests/binary.mlir
