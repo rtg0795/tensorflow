@@ -88,8 +88,6 @@ void AddTFToStablehloPasses(OpPassManager& pm, bool skip_resize,
 void AddMhloOptimizationPasses(OpPassManager& pm,
                                const bool add_fold_broadcast_pass) {
   // Rewrites some patterns for better performance.
-  pm.addNestedPass<func::FuncOp>(createUnfuseBatchNormPass());
-  pm.addNestedPass<func::FuncOp>(createFuseConvolutionPass());
   pm.addNestedPass<func::FuncOp>(createOptimizePass());
   // Conditionally enable below pass because this causes unfused convolutions
   // described in b/293149194. This problem is not replicated in
@@ -107,6 +105,8 @@ void AddMhloOptimizationPasses(OpPassManager& pm,
 }
 
 void AddStablehloOptimizationPasses(OpPassManager& pm) {
+  pm.addNestedPass<func::FuncOp>(createStablehloUnfuseBatchNormPass());
+  pm.addNestedPass<func::FuncOp>(createStablehloFuseConvolutionPass());
   // The current plan of record is to avoid doing optimization passes
   // on StableHLO, treating StableHLO purely as an input format, and do all
   // optimizations via MHLO passes that can be shared with the OpenXLA compiler.
