@@ -251,7 +251,7 @@ static absl::Status RunMultihostHloRunner(int argc, char** argv,
       TF_ASSIGN_OR_RETURN(auto profiler,
                           GPURunnerProfiler::Create(opts.xla_gpu_dump_xspace_to,
                                                     /*keep_xspace=*/false));
-      running_options.profiler = profiler.get();
+      running_options.profiler = profiler.release();
     }
   } else if (opts.device_type_str == "host") {
     TF_ASSIGN_OR_RETURN(env, xla::GetPjRtEnvironmentForHostCpu());

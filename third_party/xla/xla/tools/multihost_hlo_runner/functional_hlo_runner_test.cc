@@ -166,43 +166,6 @@ TEST_F(FunctionalHloRunnerTest, GPUProfilerKeepXSpaceReturnsNonNullXSpace) {
   TF_EXPECT_OK(env->FileExists(profile_dump_path));
 }
 
-TEST_F(FunctionalHloRunnerTest,
-       SingleDeviceHloWithGPUProfilerSavesXSpaceToDisk) {
-  if (IsTestingCpu()) {
-    GTEST_SKIP() << "GPU-only test";
-  }
-
-  GpuClientOptions gpu_options;
-  gpu_options.node_id = 0;
-  gpu_options.num_nodes = 16;
-  gpu_options.enable_mock_nccl = true;
-
-  std::string profile_dump_path =
-      tsl::io::JoinPath(testing::TempDir(), "xspace.pb");
-  tsl::Env* env = tsl::Env::Default();
-  tsl::FileSystem* fs = nullptr;
-  TF_ASSERT_OK(env->GetFileSystemForFile(profile_dump_path, &fs));
-
-  FunctionalHloRunner::RawCompileOptions raw_compile_options;
-  raw_compile_options.xla_gpu_dump_xspace_to = profile_dump_path;
-
-  TF_ASSERT_OK_AND_ASSIGN(
-      xla::PjRtEnvironment pjrt_env,
-      GetPjRtEnvironmentForGpu("", gpu_options, absl::Seconds(120)));
-  FunctionalHloRunner::RunningOptions running_options;
-  TF_ASSERT_OK_AND_ASSIGN(
-      auto profiler,
-      GPURunnerProfiler::Create(profile_dump_path, /*keep_xspace=*/false));
-  running_options.profiler = profiler.get();
-
-  TF_EXPECT_OK(FunctionalHloRunner::LoadAndRunAndDump(
-      *pjrt_env.client,
-      /* debug_options= */ {}, /* preproc_options= */ {}, raw_compile_options,
-      running_options, {GetHloPath("single_device.hlo")}, InputFormat::kText));
-  EXPECT_EQ(profiler->GetXSpace(), nullptr);
-  TF_EXPECT_OK(env->FileExists(profile_dump_path));
-}
-
 TEST_F(FunctionalHloRunnerTest, Sharded2Devices) {
   TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<xla::PjRtClient> client,
                           GetPjRtClient());
