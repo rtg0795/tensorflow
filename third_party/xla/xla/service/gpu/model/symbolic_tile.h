@@ -322,6 +322,16 @@ class SymbolicTile {
   mlir::AffineMap size_map() const;
   mlir::AffineMap stride_map() const;
 
+  // Evaluates the tile offsets given tile parameters.
+  llvm::SmallVector<int64_t> TileOffsets(
+      absl::Span<int64_t const> tile_parameters) const;
+  // Evaluates the tile sizes given tile parameters.
+  llvm::SmallVector<int64_t> TileSizes(
+      absl::Span<int64_t const> tile_parameters) const;
+  // Evaluates the tile strides given tile parameters.
+  llvm::SmallVector<int64_t> TileStrides(
+      absl::Span<int64_t const> tile_parameters) const;
+
   // Constraints on the `sizes` of the input tile. Content is irrelevant when
   // `is_satisfiable()` is false.
   const ConstraintExpression& constraints() const {

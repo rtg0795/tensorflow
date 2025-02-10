@@ -21,7 +21,6 @@ limitations under the License.
 
 #include "absl/types/span.h"
 #include "llvm/ADT/SmallVector.h"
-#include "xla/service/gpu/model/affine_map_evaluator.h"
 #include "xla/service/gpu/model/symbolic_tile.h"
 
 namespace xla {
@@ -29,20 +28,17 @@ namespace gpu {
 
 llvm::SmallVector<int64_t> SymbolicTiledHloInstruction::TileOffsets(
     absl::Span<int64_t const> tile_parameters) const {
-  return EvaluateAffineMap(symbolic_tile().offset_map(),
-                           /*dim_values=*/tile_parameters);
+  return symbolic_tile().TileOffsets(tile_parameters);
 }
 
 llvm::SmallVector<int64_t> SymbolicTiledHloInstruction::TileSizes(
     absl::Span<int64_t const> tile_parameters) const {
-  return EvaluateAffineMap(symbolic_tile().size_map(),
-                           /*dim_values=*/tile_parameters);
+  return symbolic_tile().TileSizes(tile_parameters);
 }
 
 llvm::SmallVector<int64_t> SymbolicTiledHloInstruction::TileStrides(
     absl::Span<int64_t const> tile_parameters) const {
-  return EvaluateAffineMap(symbolic_tile().stride_map(),
-                           /*dim_values=*/tile_parameters);
+  return symbolic_tile().TileStrides(tile_parameters);
 }
 
 std::string SymbolicTiledHloInstruction::ToString() const {

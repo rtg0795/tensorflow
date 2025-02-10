@@ -1151,5 +1151,23 @@ AffineMap SymbolicTile::stride_map() const {
       /*context=*/affine_map.getContext());
 }
 
+llvm::SmallVector<int64_t> SymbolicTile::TileOffsets(
+    absl::Span<int64_t const> tile_parameters) const {
+  return EvaluateAffineMap(offset_map(),
+                           /*dim_values=*/tile_parameters);
+}
+
+llvm::SmallVector<int64_t> SymbolicTile::TileSizes(
+    absl::Span<int64_t const> tile_parameters) const {
+  return EvaluateAffineMap(size_map(),
+                           /*dim_values=*/tile_parameters);
+}
+
+llvm::SmallVector<int64_t> SymbolicTile::TileStrides(
+    absl::Span<int64_t const> tile_parameters) const {
+  return EvaluateAffineMap(stride_map(),
+                           /*dim_values=*/tile_parameters);
+}
+
 }  // namespace gpu
 }  // namespace xla
