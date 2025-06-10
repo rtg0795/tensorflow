@@ -38,6 +38,7 @@ cc_library(
         "//xla/service:computation_layout",
         "//xla/service:hlo_proto_cc",
         "//xla/service/spmd/shardy/sdy_round_trip:pipelines",
+        "//xla/service/spmd/shardy/stablehlo_round_trip:pass_options",
         "//xla/service/spmd/shardy/stablehlo_round_trip:stablehlo_export",
         "//xla/service/spmd/shardy/stablehlo_round_trip:stablehlo_import",
         "//xla/tsl/framework/mlir:status_scoped_diagnostic_handler",

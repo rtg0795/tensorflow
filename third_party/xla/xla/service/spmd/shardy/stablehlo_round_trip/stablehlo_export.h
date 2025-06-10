@@ -17,6 +17,7 @@ limitations under the License.
 #define XLA_SERVICE_SPMD_SHARDY_STABLEHLO_ROUND_TRIP_STABLEHLO_EXPORT_H_
 
 #include "mlir/Pass/PassRegistry.h"
+#include "xla/service/spmd/shardy/stablehlo_round_trip/pass_options.h"
 
 namespace xla {
 namespace sdy {
@@ -27,7 +28,13 @@ void registerStablehloExportPipeline();
 // Add the xla-sdy-stablehlo-export-pipeline in `pm`. The pipeline, including a
 // sequence of passes, exports the Shardy dialect into an StableHLO module meant
 // for the XLA compiler with HLO shardings.
-void addStablehloExportPipeline(mlir::OpPassManager& pm);
+//
+// If `exportShardingConstraintsToCopy` is true, the pipeline will export
+// sharding constraints to MHLO copy ops. Else, they will be exported to
+// StableHLO @Sharding custom calls.
+void addStablehloExportPipeline(mlir::OpPassManager& pm,
+                                const StablehloExportPipelineOptions& options =
+                                    StablehloExportPipelineOptions());
 
 }  // namespace sdy
 }  // namespace xla

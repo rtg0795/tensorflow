@@ -46,7 +46,9 @@ cc_library(
     srcs = ["export_ops.cc"],
     hdrs = ["export_ops.h"],
     deps = [
+        ":pass_options",
         "//xla/mlir_hlo",
+        "//xla/service/spmd/shardy:constants",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:Pass",
@@ -102,10 +104,10 @@ cc_library(
         ":export_manual_reduction_collectives_cc",
         ":export_ops",
         ":export_shardings",
+        ":pass_options",
         ":shard_map_export",
         "//xla/service/spmd/shardy/round_trip_common:export_named_computations",
         "@llvm-project//mlir:Pass",
-        "@llvm-project//mlir:Support",
     ],
 )
 
@@ -192,5 +194,15 @@ cc_library(
         "@llvm-project//mlir:Support",
         "@shardy//shardy/dialect/sdy/ir:dialect",
         "@stablehlo//:stablehlo_ops",
+    ],
+)
+
+cc_library(
+    name = "pass_options",
+    hdrs = ["pass_options.h"],
+    deps = [
+        "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:Pass",
+        "@llvm-project//mlir:Support",
     ],
 )

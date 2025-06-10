@@ -15,10 +15,12 @@ limitations under the License.
 
 #include "xla/service/spmd/shardy/stablehlo_round_trip/export_ops.h"
 
+#include <functional>
 #include <memory>
 #include <utility>
 
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/LogicalResult.h"
 #include "mlir/IR/AffineMap.h"
@@ -41,6 +43,8 @@ limitations under the License.
 #include "shardy/dialect/sdy/ir/utils.h"
 #include "stablehlo/dialect/StablehloOps.h"
 #include "xla/mlir_hlo/mhlo/IR/hlo_ops.h"  // for CopyOp
+#include "xla/service/spmd/shardy/constants.h"
+#include "xla/service/spmd/shardy/stablehlo_round_trip/pass_options.h"
 
 namespace xla {
 namespace sdy {
@@ -114,11 +118,23 @@ class PropagationBarrierPattern
   }
 };
 
+// If `exportShardingConstraintsToCopy` is true, the method will export
+// sharding constraints to MHLO copy ops. Else, they will be exported to
+// StableHLO @Sharding custom calls.
 void rewriteCollectiveOp(mlir::Operation* op, mlir::Value input,
                          TensorShardingAttr sharding,
-                         ConversionPatternRewriter& rewriter) {
-  auto copyOp = rewriter.replaceOpWithNewOp<mhlo::CopyOp>(op, input);
-  mlir::sdy::setShardings(copyOp, sharding);
+                         ConversionPatternRewriter& rewriter,
+                         bool exportShardingConstraintsToCopy) {
+  mlir::Operation* newOp;
+  if (exportShardingConstraintsToCopy) {
+    newOp = rewriter.replaceOpWithNewOp<mhlo::CopyOp>(op, input);
+  } else {
+    auto customCallOp = rewriter.replaceOpWithNewOp<stablehlo::CustomCallOp>(
+      op, op->getResultTypes(), input);
+    customCallOp.setCallTargetName(kShardingCustomCallTargetName);
+    newOp = customCallOp;
+  }
+  mlir::sdy::setShardings(newOp, sharding);
 }
 
 template <class OpTy>
@@ -126,14 +142,21 @@ class ShardingPattern : public OpConversionPattern<OpTy> {
  public:
   using OpConversionPattern<OpTy>::OpConversionPattern;
 
+  explicit ShardingPattern(mlir::MLIRContext* context,
+                           bool exportShardingConstraintsToCopy)
+      : OpConversionPattern<OpTy>(context),
+        exportShardingConstraintsToCopy(exportShardingConstraintsToCopy)
+  {}
+
  private:
   LogicalResult matchAndRewrite(
       OpTy op, typename OpTy::Adaptor adaptor,
       ConversionPatternRewriter& rewriter) const override {
     rewriteCollectiveOp(op, adaptor.getInput(), adaptor.getSharding(),
-                        rewriter);
-    return success();
+                        rewriter, exportShardingConstraintsToCopy);
+  return success();
   }
+  bool exportShardingConstraintsToCopy;
 };
 
 template <class OpTy>
@@ -146,7 +169,8 @@ class CollectivePattern : public OpConversionPattern<OpTy> {
       OpTy op, typename OpTy::Adaptor adaptor,
       ConversionPatternRewriter& rewriter) const override {
     rewriteCollectiveOp(op, adaptor.getTensor(), adaptor.getOutSharding(),
-                        rewriter);
+                        rewriter,
+                        /*exportShardingConstraintsToCopy=*/true);
     return success();
   }
 };
@@ -155,6 +179,20 @@ class ExportOpsPass
     : public mlir::PassWrapper<ExportOpsPass, OperationPass<mlir::ModuleOp>> {
  public:
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(ExportOpsPass)
+
+  explicit ExportOpsPass(const StablehloExportPipelineOptions& options) {
+    this->exportShardingConstraintsToCopy.setValue(
+        options.exportShardingConstraintsToCopy);
+  }
+
+  ExportOpsPass() {
+    this->exportShardingConstraintsToCopy.setValue(true);
+  }
+
+  explicit ExportOpsPass(const ExportOpsPass& other) {
+    this->exportShardingConstraintsToCopy.setValue(
+      other.exportShardingConstraintsToCopy);
+  }
 
   void runOnOperation() final {
     mlir::MLIRContext& context = getContext();
@@ -167,17 +205,26 @@ class ExportOpsPass
                         ReduceScatterOp, ShardingConstraintOp,
                         PropagationBarrierOp>();
     target.addLegalOp<stablehlo::ConstantOp, mhlo::CopyOp>();
+    if (!exportShardingConstraintsToCopy) {
+      target.addDynamicallyLegalOp<stablehlo::CustomCallOp>(
+          [](stablehlo::CustomCallOp customCallOp) {
+        return customCallOp.getCallTargetName()
+            == kShardingCustomCallTargetName;
+      });
+    }
     mlir::RewritePatternSet patterns(&context);
     // After converting `sdy.constant` into `stablehlo.constant`, the constants
     // should not be deduped via folding. Fortunately, folding only happens in
     // greedy pattern rewriters. ExportHloShardingsPass does a simple walk,
     // which keeps the constants as is.
-    patterns.add<ConstantPattern, AllReducePattern, ShardingPattern<ReshardOp>,
-                 ShardingPattern<ShardingConstraintOp>,
+    patterns.add<ConstantPattern, AllReducePattern,
                  PropagationBarrierPattern, CollectivePattern<AllGatherOp>,
                  CollectivePattern<AllSliceOp>, CollectivePattern<AllToAllOp>,
                  CollectivePattern<CollectivePermuteOp>,
                  CollectivePattern<ReduceScatterOp>>(&context);
+    patterns.add<ShardingPattern<ShardingConstraintOp>,
+                 ShardingPattern<ReshardOp>>(
+        &context, exportShardingConstraintsToCopy);
     if (mlir::failed(mlir::applyPartialConversion(getOperation(), target,
                                                   std::move(patterns)))) {
       signalPassFailure();
@@ -194,15 +241,24 @@ class ExportOpsPass
   void getDependentDialects(mlir::DialectRegistry& registry) const final {
     registry.insert<mlir::sdy::SdyDialect, mlir::mhlo::MhloDialect>();
   }
+
+  Option<bool> exportShardingConstraintsToCopy{
+    *this, "export-sharding-constraints-to-copy",
+    llvm::cl::desc("Whether to sharding constraints to MHLO copy. Else export "
+                   "them to StableHLO @Sharding custom calls"),
+    llvm::cl::init(true)};
 };
 
 }  // namespace
 
-std::unique_ptr<Pass> createExportOpsPass() {
-  return std::make_unique<ExportOpsPass>();
+std::unique_ptr<Pass> createExportOpsPass(
+  const StablehloExportPipelineOptions& options) {
+  return std::make_unique<ExportOpsPass>(options);
 }
 
-void registerExportOpsPass() { mlir::registerPass(createExportOpsPass); }
+void registerExportOpsPass() {
+  mlir::registerPass(std::make_unique<ExportOpsPass>);
+}
 
 }  // namespace sdy
 }  // namespace xla

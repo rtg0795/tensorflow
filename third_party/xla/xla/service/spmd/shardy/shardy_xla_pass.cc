@@ -56,6 +56,7 @@ limitations under the License.
 #include "xla/service/hlo.pb.h"
 #include "xla/service/spmd/shardy/constants.h"
 #include "xla/service/spmd/shardy/sdy_round_trip/pipelines.h"
+#include "xla/service/spmd/shardy/stablehlo_round_trip/pass_options.h"
 #include "xla/service/spmd/shardy/stablehlo_round_trip/stablehlo_export.h"
 #include "xla/service/spmd/shardy/stablehlo_round_trip/stablehlo_import.h"
 #include "xla/service/spmd/shardy/utils.h"
@@ -368,7 +369,7 @@ absl::Status runShardingPropagation(HloModule* hloModule,
   options.dumpDirectory = shardyDir;
   options.conservativePropagation = hloModule->use_auto_spmd_partitioning();
   mlir::sdy::addPropagationPipeline(pm, options);
-  addStablehloExportPipeline(pm);
+  addStablehloExportPipeline(pm, StablehloExportPipelineOptions());
   pm.addPass(mlir::sdy::createSaveModuleOpPass(shardyDir,
                                                "sdy_module_after_xla_export"));
   tsl::StatusScopedDiagnosticHandler diagnosticHandler(
