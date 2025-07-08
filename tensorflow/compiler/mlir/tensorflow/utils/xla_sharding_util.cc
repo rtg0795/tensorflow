@@ -625,6 +625,7 @@ mlir::LogicalResult ExtractInputsForLogicalDevices(
   // If sharding attribute does not exist, then all inputs are placed on 0th
   // logical core by default.
   if (!sharding_attrs) {
+    LOG(INFO) << "sharding attrs not found";
     (*input_list)[0] = cluster_func_inputs;
     return mlir::success();
   }
@@ -643,11 +644,13 @@ mlir::LogicalResult ExtractInputsForLogicalDevices(
             mlir::cast<mlir::StringAttr>(sharding_attr).getValue().str(),
             sharding)
             .failed()) {
+      LOG(INFO) << "incorrect sharding format for inputs";
       return cluster_func.emitError("incorrect sharding format for inputs");
     }
 
     const auto input_sharding_type = sharding.type();
     auto tiled_sharding_mismatched = [&](int tiled_input_size) {
+      LOG(INFO) << "tiled_sharding_mismatched";
       return cluster_func.emitError(
           llvm::formatv("incorrect {0}-th tiled input sharding received. "
                         "Product of tile sharding splits({1}) must be equal to "
@@ -655,32 +658,67 @@ mlir::LogicalResult ExtractInputsForLogicalDevices(
                         input_index, tiled_input_size, num_cores_per_replica));
     };
 
+    LOG(INFO) << "sharding: " << sharding.DebugString();
+    if (sharding.type() == xla::OpSharding::OTHER) {
+      if (sharding.tile_assignment_devices_size() == 0 &&
+          (!sharding.iota_reshape_dims().empty() ||
+           sharding.tile_assignment_dimensions_size() > 0)) {
+        LOG(INFO) << "Attempting to convert Shardy iota-based sharding";
+        absl::StatusOr<xla::HloSharding> hlo_sharding =
+            xla::HloSharding::FromProto(sharding);
+        if (!hlo_sharding.ok()) {
+          return cluster_func.emitError(
+              llvm::formatv("Failed to convert OpSharding to HloSharding:{0}",
+                            hlo_sharding.status().ToString()));
+        }
+
+        if (!hlo_sharding->IsTiled()) {
+          return cluster_func.emitError("Shardy OTHER sharding is not tiled");
+        }
+
+        sharding.clear_iota_reshape_dims();
+        sharding.clear_iota_transpose_perm();
+        const xla::Array<int64_t>& tile_assignment =
+            hlo_sharding->tile_assignment().array();
+        for (int64_t device : tile_assignment) {
+          sharding.add_tile_assignment_devices(device);
+        }
+        LOG(INFO) << "Converted sharding: " << sharding.DebugString();
+      }
+    }
+
     // If input is already partitioned using the `tf.TPUPartitionedInputV2` op,
     // only replicated sharding is supported where i-th operand to
     // `tf.TPUPartitionedInputV2` op is input to the i-th logical device.
     if (auto partitioned_input =
             llvm::dyn_cast_or_null<mlir::TF::TPUPartitionedInputV2Op>(
                 input_value.getDefiningOp())) {
-      if (UnsupportedPartitionedShardingType(input_sharding_type))
+      if (UnsupportedPartitionedShardingType(input_sharding_type)) {
+        LOG(INFO) << "unsupported input sharding type ";
         return cluster_func->emitOpError()
                << "unsupported input sharding type "
                << OpSharding_Type_Name(input_sharding_type) << " for "
                << input_index << "-th input";
+      }
 
       if (input_sharding_type == xla::OpSharding::REPLICATED) {
         for (const auto& index_and_inputs : llvm::enumerate(*input_list)) {
+          LOG(INFO) << "HERE";
           index_and_inputs.value().emplace_back(
               partitioned_input.getOperand(index_and_inputs.index()));
         }
       } else {
         assert(input_sharding_type == xla::OpSharding::OTHER);
-        if (partitioned_input.getInputs().size() != num_cores_per_replica)
+        if (partitioned_input.getInputs().size() != num_cores_per_replica) {
+          LOG(INFO) << "HERE2";
           return tiled_sharding_mismatched(
               partitioned_input.getInputs().size());
+        }
 
         for (int i = 0; i < sharding.tile_assignment_devices_size(); ++i) {
           const int assigned_logical_device =
               sharding.tile_assignment_devices(i);
+          LOG(INFO) << "HERE3";
           (*input_list)[assigned_logical_device].emplace_back(
               partitioned_input.getInputs()[i]);
         }
@@ -689,6 +727,7 @@ mlir::LogicalResult ExtractInputsForLogicalDevices(
     }
 
     if (IsSplitSharding(sharding)) {
+      LOG(INFO) << "HERE7";
       bool is_ici_weight_dist_spmd =
           cluster_func.getOperand(input_index).getDefiningOp() &&
           cluster_func.getOperand(input_index)
@@ -700,30 +739,43 @@ mlir::LogicalResult ExtractInputsForLogicalDevices(
         auto result = HandleTileShardedInputsUsingXlaSplitOps(
             cluster_func.getLoc(), sharding, input_value, builder,
             &tiled_inputs, is_ici_weight_dist_spmd);
-        if (mlir::failed(result)) return mlir::failure();
+        if (mlir::failed(result)) {
+          LOG(INFO) << "Failure";
+          return mlir::failure();
+        }
       } else {
         auto result = HandleTileShardedInputsUsingTfSplitOps(
             cluster_func.getLoc(), sharding, input_value, builder,
             &tiled_inputs, is_ici_weight_dist_spmd);
-        if (mlir::failed(result)) return mlir::failure();
+        if (mlir::failed(result)) {
+          LOG(INFO) << "Failure";
+          return mlir::failure();
+        }
       }
 
       const int64_t tiled_inputs_size = tiled_inputs.size();
       if (tiled_inputs_size != num_cores_per_replica)
         return tiled_sharding_mismatched(tiled_inputs.size());
 
+      LOG(INFO) << "HERE8 " << sharding.tile_assignment_devices_size();
       for (int i = 0; i < sharding.tile_assignment_devices_size(); ++i) {
         const int assigned_logical_device = sharding.tile_assignment_devices(i);
+        LOG(INFO) << "HERE4";
         (*input_list)[assigned_logical_device].emplace_back(tiled_inputs[i]);
       }
     } else if (IsReplicatedSharding(sharding)) {
-      for (auto& inputs : *input_list) inputs.emplace_back(input_value);
+      LOG(INFO) << "HERE5";
+      for (auto& inputs : *input_list) {
+        inputs.emplace_back(input_value);
+      }
     } else {
+      LOG(INFO) << "HERE6";
       assert(input_sharding_type == xla::OpSharding::MAXIMAL);
       const int logical_device_id = sharding.tile_assignment_devices(0);
       (*input_list)[logical_device_id].emplace_back(input_value);
     }
   }
+  LOG(INFO) << "Returning success";
   return mlir::success();
 }
 
@@ -731,6 +783,8 @@ mlir::LogicalResult ParseAndValidateOutputSharding(
     const int num_cores_per_replica,
     mlir::tf_device::ClusterFuncOp cluster_func,
     mlir::SmallVector<xla::OpSharding, 4>* output_sharding_list) {
+  LOG(INFO) << "ParseAndValidateOutputSharding";
+  cluster_func.dump();
   output_sharding_list->reserve(cluster_func.getNumResults());
 
   const auto output_sharding_attrs =
@@ -758,14 +812,50 @@ mlir::LogicalResult ParseAndValidateOutputSharding(
             .failed()) {
       return cluster_func.emitError("incorrect sharding format for outputs");
     }
+    LOG(INFO) << "output_sharding: " << sharding.DebugString();
 
-    if (sharding.type() == xla::OpSharding::OTHER &&
-        sharding.tile_assignment_devices_size() != num_cores_per_replica)
-      return cluster_func.emitError(llvm::formatv(
-          "incorrect sharding format for outputs. Number of "
-          "tiled outputs({0}) must match the number of logical "
-          "devices({1})",
-          sharding.tile_assignment_devices_size(), num_cores_per_replica));
+    if (sharding.type() == xla::OpSharding::OTHER) {
+      if (sharding.tile_assignment_devices_size() == 0 &&
+          (!sharding.iota_reshape_dims().empty() ||
+           sharding.tile_assignment_dimensions_size() > 0)) {
+        LOG(INFO) << "Attempting to convert Shardy iota-based sharding";
+        absl::StatusOr<xla::HloSharding> hlo_sharding =
+            xla::HloSharding::FromProto(sharding);
+        if (!hlo_sharding.ok()) {
+          return cluster_func.emitError(
+              llvm::formatv("Failed to convert OpSharding to HloSharding:{0}",
+                            hlo_sharding.status().ToString()));
+        }
+
+        if (!hlo_sharding->IsTiled()) {
+          return cluster_func.emitError("Shardy OTHER sharding is not tiled");
+        }
+
+        sharding.clear_iota_reshape_dims();
+        sharding.clear_iota_transpose_perm();
+        const xla::Array<int64_t>& tile_assignment =
+            hlo_sharding->tile_assignment().array();
+        for (int64_t device : tile_assignment) {
+          sharding.add_tile_assignment_devices(device);
+        }
+        LOG(INFO) << "Converted sharding: " << sharding.DebugString();
+      }
+
+      if (sharding.tile_assignment_devices_size() != num_cores_per_replica)
+        return cluster_func.emitError(llvm::formatv(
+            "incorrect sharding format for outputs. Number of "
+            "tiled outputs({0}) must match the number of logical "
+            "devices({1})",
+            sharding.tile_assignment_devices_size(), num_cores_per_replica));
+    }
+
+    // if (sharding.type() == xla::OpSharding::OTHER &&
+    //     sharding.tile_assignment_devices_size() != num_cores_per_replica)
+    //   return cluster_func.emitError(llvm::formatv(
+    //       "incorrect sharding format for outputs. Number of "
+    //       "tiled outputs({0}) must match the number of logical "
+    //       "devices({1})",
+    //       sharding.tile_assignment_devices_size(), num_cores_per_replica));
 
     if (sharding.type() == xla::OpSharding::MAXIMAL &&
         ((sharding.tile_assignment_devices(0) >= num_cores_per_replica) ||
@@ -1295,11 +1385,13 @@ mlir::LogicalResult VerifyShardingEquivalent(mlir::Attribute sharding_attr1,
   xla::OpSharding sharding_proto1;
   if (tensorflow::DecodeShardingAttribute(sharding_attr1, sharding_proto1)
           .failed()) {
+    LOG(INFO) << "DecodeShardingAttribute failed for sharding_attr1: ";
     return mlir::failure();
   }
   xla::OpSharding sharding_proto2;
   if (tensorflow::DecodeShardingAttribute(sharding_attr2, sharding_proto2)
           .failed()) {
+    LOG(INFO) << "DecodeShardingAttribute failed for sharding_attr2: ";
     return mlir::failure();
   }
 
@@ -1331,6 +1423,7 @@ mlir::LogicalResult VerifyShardingEquivalent(
 absl::StatusOr<mlir::StringAttr> GetXlaShardingAttrFromShardingOp(
     mlir::TF::XlaShardingOp sharding) {
   if (!sharding.get_XlaShardingV2Attr()) {
+    LOG(INFO) << "Returning _XlaSharding V1";
     return sharding.get_XlaShardingAttr();
   }
 
@@ -1343,6 +1436,7 @@ absl::StatusOr<mlir::StringAttr> GetXlaShardingAttrFromShardingOp(
                      sharding.get_XlaShardingV2().value().str(), " vs ",
                      sharding.get_XlaSharding().value().str()));
   }
+  LOG(INFO) << "Returning _XlaSharding V2";
   return sharding.get_XlaShardingV2Attr();
 }
 

@@ -232,6 +232,55 @@ void convertShardyAttrs(FuncOp funcOp, IRRewriter& rewriter) {
   });
 }
 
+void handleTupleArgsSharding(ModuleOp moduleOp) {
+  DictionaryAttr moduleFrontendAttrs =
+      moduleOp->getAttrOfType<DictionaryAttr>(kFrontendAttributesAttr);
+  if (!moduleFrontendAttrs) return;
+
+  mlir::StringAttr argShardingsStr = mlir::dyn_cast_or_null<mlir::StringAttr>(
+      moduleFrontendAttrs.get(kInTupleShardings));
+  if (!argShardingsStr) return;
+
+  mlir::ArrayAttr argShardings = parseStringAttr<mlir::ArrayAttr>(
+      argShardingsStr.getValue(), moduleOp.getContext());
+  if (!argShardings) {
+    moduleOp.emitError() << "Failed to parse element shardings array";
+    return;
+  }
+
+  FuncOp mainFunc = moduleOp.lookupSymbol<FuncOp>("main");
+  if (!mainFunc) return;
+
+  if (argShardings.size() != mainFunc.getNumArguments()) {
+    mainFunc.emitError() << "Number of argument shardings ("
+                         << argShardings.size()
+                         << ") does not match number of function arguments ("
+                         << mainFunc.getNumArguments()
+                         << ") for function main.";
+    return;
+  }
+
+  for (auto [argNum, argSharding] : llvm::enumerate(argShardings)) {
+    if (DictionaryAttr funcArgFrontendAttrs =
+            getFuncArgFrontendAttrs(mainFunc, argNum)) {
+      if (funcArgFrontendAttrs.get(kShardingRoundTripAttr)) {
+        mainFunc.emitError()
+            << "frontend_attrs already contains " << kShardingRoundTripAttr
+            << " for argument " << argNum << " of function main";
+        return;
+      }
+    }
+
+    setFrontendAttribute(mainFunc, kFrontendAttributesAttr,
+                         mlir::dyn_cast<TensorShardingAttr>(argSharding),
+                         argNum);
+  }
+
+  removeFrontendAttribute(moduleOp, kInTupleShardings);
+  // TODO: Remove once we handle the out tuple shardings.
+  // removeFrontendAttribute(moduleOp, kOutTupleShardings);
+}
+
 class SdyRoundTripImportShardyAttrsPass
     : public mlir::PassWrapper<SdyRoundTripImportShardyAttrsPass,
                                mlir::OperationPass<ModuleOp>> {
@@ -262,6 +311,11 @@ class SdyRoundTripImportShardyAttrsPass
           moduleOp.getLoc(), mesh.getName(), meshAttr));
     }
     removeFrontendAttribute(moduleOp, kMeshesRoundTripAttr);
+
+    handleTupleArgsSharding(moduleOp);
+
+    // TODO
+    // handleTupleResultsSharding
 
     for (auto funcOp : moduleOp.getOps<FuncOp>()) {
       convertShardyAttrs(funcOp, rewriter);

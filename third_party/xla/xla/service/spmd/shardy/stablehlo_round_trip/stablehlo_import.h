@@ -74,6 +74,15 @@ void addStablehloImportPipeline(mlir::OpPassManager& pm,
 std::unique_ptr<mlir::Pass> createImportShardingsPass(
     mlir::ArrayRef<bool> allowPropagationToArgs,
     mlir::ArrayRef<bool> allowPropagationToResults);
+
+// Returns the mesh attribute from the module.
+mlir::sdy::MeshAttr getMeshAttr(xla::HloModule* module,
+                                mlir::MLIRContext* context);
+
+// Adds the sdy shardings to frontend attributes for each instruction in
+// HloModule.
+void addSdyShardings(xla::HloModule* module);
+
 }  // namespace sdy
 }  // namespace xla
 

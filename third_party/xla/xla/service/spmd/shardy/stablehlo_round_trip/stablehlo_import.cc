@@ -29,6 +29,7 @@ limitations under the License.
 #include "absl/algorithm/container.h"
 #include "absl/container/flat_hash_set.h"
 #include "absl/log/check.h"
+#include "absl/log/log.h"
 #include "absl/strings/str_cat.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
@@ -37,6 +38,7 @@ limitations under the License.
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/LogicalResult.h"
+#include "mlir/AsmParser/AsmParser.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/Builders.h"
@@ -60,6 +62,9 @@ limitations under the License.
 #include "shardy/dialect/sdy/ir/constants.h"
 #include "shardy/dialect/sdy/ir/dialect.h"
 #include "shardy/dialect/sdy/ir/utils.h"
+#include "xla/hlo/ir/hlo_computation.h"
+#include "xla/hlo/ir/hlo_module.h"
+#include "xla/hlo/ir/hlo_opcode.h"
 #include "xla/hlo/ir/hlo_sharding.h"
 #include "xla/hlo/ir/tile_assignment.h"
 #include "xla/hlo/translate/mhlo_to_hlo/attribute_exporter.h"
@@ -89,6 +94,7 @@ using ::mlir::StringAttr;
 using ::mlir::StringRef;
 using ::mlir::func::FuncOp;
 
+using ::mlir::sdy::attributeToString;
 using ::mlir::sdy::AxisRefAttr;
 using ::mlir::sdy::DimensionShardingAttr;
 using ::mlir::sdy::kShardingAttr;
@@ -97,6 +103,7 @@ using ::mlir::sdy::MeshAxisAttr;
 using ::mlir::sdy::MeshOp;
 using ::mlir::sdy::SdyDialect;
 using ::mlir::sdy::TensorShardingAttr;
+using ::mlir::sdy::TensorShardingPerValueAttr;
 
 // The information of a sub-dimension in IotaTileAssignment. One tile dimension
 // in tile assignment may correspond to multiple sub-dimensions. See
@@ -692,6 +699,104 @@ void registerStablehloImportPipeline() {
       "SDY (Shardy) dialect.",
       std::bind(addStablehloImportPipeline, std::placeholders::_1,
                 ArrayRef<bool>(), ArrayRef<bool>()));
+}
+
+MeshAttr getMeshAttr(xla::HloModule* module, mlir::MLIRContext* context) {
+  for (xla::HloComputation* computation : module->computations()) {
+    for (xla::HloInstruction* instruction : computation->instructions()) {
+      const auto& attributes = instruction->frontend_attributes().map();
+      auto it = attributes.find(kShardingRoundTripAttr);
+      if (it != attributes.end()) {
+        mlir::Attribute attr = mlir::parseAttribute(it->second, context);
+        if (TensorShardingAttr shardingAttr =
+                mlir::dyn_cast<TensorShardingAttr>(attr)) {
+          return mlir::cast<MeshAttr>(shardingAttr.getMeshOrRef());
+        }
+        if (TensorShardingPerValueAttr shardingPerValueAttr =
+                mlir::dyn_cast<TensorShardingPerValueAttr>(attr)) {
+          if (!shardingPerValueAttr.getShardings().empty()) {
+            return mlir::cast<MeshAttr>(
+                shardingPerValueAttr.getShardings()[0].getMeshOrRef());
+          }
+        }
+      }
+    }
+  }
+
+  return MeshAttr();
+}
+
+void addSdyShardings(xla::HloModule* module) {
+  mlir::MLIRContext context;
+  context.loadDialect<SdyDialect>();
+  MeshAttr mesh = getMeshAttr(module, &context);
+
+  for (xla::HloComputation* computation : module->computations()) {
+    for (xla::HloInstruction* instruction : computation->instructions()) {
+      if (instruction->has_sharding() &&
+          !instruction->frontend_attributes().map().contains(
+              kShardingRoundTripAttr)) {
+        xla::HloSharding hloSharding = instruction->sharding();
+
+        if (hloSharding.IsTuple()) {
+          module->add_frontend_attribute(std::string(kUseTupleArgs), "True");
+
+          SmallVector<mlir::Attribute> sdyElementShardings;
+          sdyElementShardings.reserve(hloSharding.tuple_elements().size());
+
+          for (const auto& [tupleIndex, elementSharding] :
+               llvm::enumerate(hloSharding.tuple_elements())) {
+            int64_t rank = instruction->shape()
+                               .tuple_shapes(tupleIndex)
+                               .dimensions()
+                               .size();
+            TensorShardingAttr sdySharding = convertToSdySharding(
+                elementSharding, mesh,
+                /*deviceIdToMaximalMeshName=*/
+                llvm::SmallDenseMap<int64_t, mlir::StringRef>(), rank,
+                /*openDims=*/false);
+
+            TensorShardingAttr inlinedMeshSharding = TensorShardingAttr::get(
+                &context, mesh, sdySharding.getDimShardings(),
+                sdySharding.getReplicatedAxes(),
+                sdySharding.getUnreducedAxes());
+
+            sdyElementShardings.push_back(inlinedMeshSharding);
+          }
+
+          mlir::Builder builder(&context);
+          mlir::ArrayAttr arrayAttr = builder.getArrayAttr(sdyElementShardings);
+
+          if (instruction->opcode() == xla::HloOpcode::kParameter) {
+            module->add_frontend_attribute(kInTupleShardings,
+                                           attributeToString(arrayAttr));
+          } else if (instruction->IsRoot()) {
+            module->add_frontend_attribute(kOutTupleShardings,
+                                           attributeToString(arrayAttr));
+          } else {
+            LOG(FATAL) << "Unsupported tuple sharding on instruction: "
+                       << instruction->ToString();
+          }
+        } else {
+          int64_t rank = instruction->shape().dimensions().size();
+          TensorShardingAttr sdySharding = convertToSdySharding(
+              hloSharding, mesh,
+              /*deviceIdToMaximalMeshName=*/
+              llvm::SmallDenseMap<int64_t, mlir::StringRef>(), rank,
+              /*openDims=*/false);
+
+          TensorShardingAttr inlinedMeshSharding = TensorShardingAttr::get(
+              &context, mesh, sdySharding.getDimShardings(),
+              sdySharding.getReplicatedAxes(), sdySharding.getUnreducedAxes());
+
+          instruction->set_frontend_attribute(
+              kShardingRoundTripAttr,
+              attributeToString(TensorShardingPerValueAttr::get(
+                  &context, {inlinedMeshSharding})));
+        }
+      }
+    }
+  }
 }
 
 }  // namespace sdy

@@ -16,6 +16,8 @@ limitations under the License.
 #ifndef XLA_SERVICE_SPMD_SHARDY_CONSTANTS_H_
 #define XLA_SERVICE_SPMD_SHARDY_CONSTANTS_H_
 
+#include <string>
+
 #include "llvm/ADT/StringRef.h"
 
 namespace xla {
@@ -118,6 +120,13 @@ inline constexpr llvm::StringRef kImportMhloShardings =
 // TODO(b/345414638): remove this when Shardy is the first thing run in the
 // XLA pipeline, so no HLO<->MLIR round-tripping.
 inline constexpr llvm::StringRef kUseTupleArgs = "xla.sdy.use_tuple_args";
+
+// Note: Using std::string instead of StringRef to avoid string copies when
+// using xla::HloModule::add_frontend_attribute.
+// Attribute name for the input tuple shardings.
+inline const std::string kInTupleShardings = "xla.sdy.tuple.args.shardings";
+// Attribute name for the output tuple shardings.
+inline const std::string kOutTupleShardings = "xla.sdy.tuple.results.shardings";
 
 // Attribute name for the in shardings of a `ManualComputationOp`.
 inline constexpr llvm::StringRef kInShardings = "xla.sdy.in_shardings";
