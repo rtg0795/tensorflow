@@ -27,6 +27,7 @@ limitations under the License.
 #include "xla/hlo/ir/hlo_instructions.h"
 #include "xla/hlo/ir/hlo_module.h"
 #include "xla/hlo/ir/hlo_opcode.h"
+#include "xla/service/pattern_matcher.h"
 #include "xla/util.h"
 
 namespace xla {
@@ -326,6 +327,26 @@ std::optional<ReduceScatterSpec> SpecFromReduceScatterInstr(
   return spec;
 }
 
+// Traverses a chain of single-user instructions with a specific opcode.
+//
+// Starting from `user`, this function checks if it matches the provided
+// `opcode`. If it does, and if it has exactly one user, it updates `user` to
+// point to that single user and stores the original instruction in `found_op`.
+static HloInstruction* TraverseIfUserHasOpcode(HloInstruction* user,
+                                               HloOpcode opcode,
+                                               HloInstruction** found_op) {
+  if (user->opcode() == opcode) {
+    if (user->user_count() != 1) {
+      VLOG(2) << HloOpcodeString(opcode) << " user count > 1 for "
+              << user->ToString();
+      return nullptr;
+    }
+    *found_op = user;
+    return user->users().front();
+  }
+  return user;
+}
+
 }  // namespace
 
 std::optional<ReduceScatterSpec> MatchReduceScatter(
@@ -420,6 +441,62 @@ std::optional<SplitDimSpec> ExtractSplitDimSpec(
   return spec;
 }
 
+bool CheckUniformReplicaGroups(const HloChannelInstruction* instruction) {
+  CHECK_NE(instruction, nullptr);
+  if (instruction->replica_groups().size() <= 1) {
+    return true;
+  }
+  const int64_t size = instruction->replica_groups().front().replica_ids_size();
+  absl::Span<const ReplicaGroup> rgs = instruction->replica_groups();
+  return absl::c_all_of(rgs.subspan(1), [size](const ReplicaGroup& group) {
+    return group.replica_ids_size() == size;
+  });
+}
+
+void ExtractDynamicSliceFromCollectiveUser(
+    const HloChannelInstruction* instruction, bool allow_multiple_users,
+    bool allow_intervening_reshape, bool allow_intervening_bitcast,
+    HloInstruction** dynamic_slice_user, HloInstruction** bitcast,
+    HloInstruction** reshape) {
+  *dynamic_slice_user = nullptr;
+  *reshape = nullptr;
+  *bitcast = nullptr;
+
+  if (instruction->user_count() == 0) {
+    return;
+  }
+
+  HloInstruction* user = instruction->users()[0];
+  if (allow_multiple_users) {
+    for (auto* some_user : instruction->users()) {
+      if ((allow_intervening_reshape &&
+           some_user->opcode() == HloOpcode::kReshape) ||
+          some_user->opcode() == HloOpcode::kDynamicSlice) {
+        user = some_user;
+        break;
+      }
+    }
+  }
+
+  if (allow_intervening_reshape) {
+    user = TraverseIfUserHasOpcode(user, HloOpcode::kReshape, reshape);
+    if (user == nullptr) {
+      return;
+    }
+  }
+
+  if (allow_intervening_bitcast) {
+    user = TraverseIfUserHasOpcode(user, HloOpcode::kBitcast, bitcast);
+    if (user == nullptr) {
+      return;
+    }
+  }
+
+  if (user->opcode() == HloOpcode::kDynamicSlice) {
+    *dynamic_slice_user = user;
+  }
+}
+
 std::optional<ReduceScatterSpec> MatchWithDynamicSlice(
     const HloChannelInstruction* instruction, int64_t num_partitions,
     int64_t num_replicas, bool allow_multiple_split_dims,
@@ -444,58 +521,20 @@ std::optional<ReduceScatterSpec> MatchWithDynamicSlice(
     VLOG(2) << "All-gather user_count != 1 " << instruction->ToString();
     return std::nullopt;
   }
-  if (instruction->replica_groups().size() > 1) {
-    const int64_t size = instruction->replica_groups()[0].replica_ids_size();
-    absl::Span<const ReplicaGroup> rgs = instruction->replica_groups();
-    const bool has_uniform_size = absl::c_all_of(
-        rgs.subspan(1, size - 1), [size](const ReplicaGroup& group) {
-          return group.replica_ids_size() == size;
-        });
-    if (!has_uniform_size) {
-      VLOG(2) << "Unsupported non-uniform replica group size "
-              << instruction->ToString();
-      return std::nullopt;
-    }
-  }
-  // Always assume first user to start.
-  HloInstruction* user = instruction->users()[0];
-  if (allow_multiple_users) {
-    // If we find a reshape or dynamic-slice use that.
-    for (auto* some_user : instruction->users()) {
-      if ((allow_intervening_reshape &&
-           some_user->opcode() == HloOpcode::kReshape) ||
-          some_user->opcode() == HloOpcode::kDynamicSlice) {
-        user = some_user;
-        break;
-      }
-    }
-  }
-  HloInstruction* reshape = nullptr;
-  if (allow_intervening_reshape && user->opcode() == HloOpcode::kReshape) {
-    // Allow the intervening reshape if it reshapes just the non scattered
-    // dimension (checked later).
-    reshape = user;
-    if (reshape->user_count() != 1) {
-      VLOG(2) << "Reshape following all-reduce has user count > 1"
-              << reshape->ToString();
-      return std::nullopt;
-    }
-    user = reshape->users().front();
-  }
-  HloInstruction* bitcast = nullptr;
-  if (allow_intervening_bitcast && user->opcode() == HloOpcode::kBitcast) {
-    VLOG(2) << "Allowing intervening bitcast " << user->ToString();
-    bitcast = user;
-    if (bitcast->user_count() != 1) {
-      VLOG(2) << "Bitcast following all-reduce has user count > 1"
-              << bitcast->ToString();
-      return std::nullopt;
-    }
-    user = bitcast->users().front();
+  if (!CheckUniformReplicaGroups(instruction)) {
+    VLOG(2) << "Non-uniform replica groups " << instruction->ToString();
+    return std::nullopt;
   }
 
-  if (user->opcode() != HloOpcode::kDynamicSlice) {
-    VLOG(2) << "AG or AR user is not dynamic slice " << user->ToString();
+  HloInstruction* user = nullptr;
+  HloInstruction* bitcast = nullptr;
+  HloInstruction* reshape = nullptr;
+  ExtractDynamicSliceFromCollectiveUser(
+      instruction, allow_multiple_users, allow_intervening_reshape,
+      allow_intervening_bitcast, &user, &bitcast, &reshape);
+
+  if (!user) {
+    VLOG(2) << "AG or AR user is not dynamic slice " << instruction->ToString();
     return std::nullopt;
   }
 

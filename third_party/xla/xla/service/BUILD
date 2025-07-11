@@ -103,6 +103,7 @@ cc_library(
     srcs = ["collective_opt_utils.cc"],
     hdrs = ["collective_opt_utils.h"],
     deps = [
+        ":pattern_matcher",
         "//xla:util",
         "//xla/hlo/ir:hlo",
         "@com_google_absl//absl/algorithm:container",
