@@ -15,18 +15,22 @@ limitations under the License.
 
 #include "xla/codegen/math_lib.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <functional>
+#include <iterator>
 #include <memory>
 #include <optional>
 #include <string>
-#include <utility>
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
 #include "absl/log/check.h"
+#include "absl/strings/str_cat.h"
+#include "absl/strings/str_join.h"
 #include "absl/strings/string_view.h"
+#include "absl/types/span.h"
 #include "llvm/Analysis/CGSCCPassManager.h"
 #include "llvm/Analysis/LoopAnalysisManager.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
@@ -72,6 +76,145 @@ limitations under the License.
 #include "xla/xla_data.pb.h"
 
 namespace xla::codegen {
+class LdexpF64MathFunction final : public MathFunction {
+ public:
+  absl::string_view FunctionName() const override { return "ldexp"; }
+  std::vector<std::string> TargetFunctions() const override {
+    return {"xla.ldexp.f64.i32"};
+  }
+  std::vector<std::vector<Intrinsic::Type>> SupportedVectorTypes()
+      const override {
+    return {{Intrinsic::S(xla::F64), Intrinsic::S(xla::S32)},
+            {Intrinsic::V(xla::F64, 2), Intrinsic::V(xla::S32, 2)},
+            {Intrinsic::V(xla::F64, 4), Intrinsic::V(xla::S32, 4)},
+            {Intrinsic::V(xla::F64, 8), Intrinsic::V(xla::S32, 8)}};
+  }
+
+  llvm::Function* CreateDefinition(
+      llvm::Module& module, absl::string_view name,
+      absl::Span<const Intrinsic::Type> types) const override {
+    CHECK(types.size() == 2) << "Expected 2 types for ldexp";
+    CHECK_OK(Intrinsic::VerifySameWidth(types[0], types[1]));
+    return math::CreateLdexpF64(
+        &module, Intrinsic::TypeToIrType(types.front(), module.getContext()));
+  }
+};
+
+class ExpF64MathFunction final : public MathFunction {
+ public:
+  absl::string_view FunctionName() const override { return "exp"; }
+  std::vector<std::string> TargetFunctions() const override {
+    return {"xla.exp.f64"};
+  }
+  std::vector<std::vector<Intrinsic::Type>> SupportedVectorTypes()
+      const override {
+    return {
+        {Intrinsic::S(xla::F64)},
+        {Intrinsic::V(xla::F64, 2)},
+        {Intrinsic::V(xla::F64, 4)},
+        {Intrinsic::V(xla::F64, 8)},
+    };
+  }
+
+  llvm::Function* CreateDefinition(
+      llvm::Module& module, absl::string_view name,
+      absl::Span<const Intrinsic::Type> types) const override {
+    CHECK(types.size() == 1) << "Expected 1 type for exp";
+    return math::CreateExpF64(
+        &module, Intrinsic::TypeToIrType(types.front(), module.getContext()));
+  }
+};
+
+class FpextF32ToBf16MathFunction final : public MathFunction {
+ public:
+  absl::string_view FunctionName() const override {
+    return "xla.fptrunc.f32.to.bf16";
+  }
+
+  std::vector<std::string> TargetFunctions() const override {
+    return {"xla.fptrunc.f32.to.bf16"};
+  }
+
+  std::vector<std::vector<Intrinsic::Type>> SupportedVectorTypes()
+      const override {
+    return {
+        {Intrinsic::S(xla::F32)},
+        {Intrinsic::V(xla::F32, 2)},
+        {Intrinsic::V(xla::F32, 4)},
+        {Intrinsic::V(xla::F32, 8)},
+    };
+  }
+
+  llvm::Function* CreateDefinition(
+      llvm::Module& module, absl::string_view name,
+      absl::Span<const Intrinsic::Type> types) const override {
+    CHECK(types.size() == 2) << "Expected [from, to] type for fptrunc";
+    auto from = types[0];
+    auto to = types[1];
+    return Intrinsic::FpTrunc::CreateDefinition(&module, from, to).value();
+  }
+};
+
+template <PrimitiveType Type>
+class Log1pMathFunction final : public MathFunction {
+ public:
+  absl::string_view FunctionName() const override { return "xla.log1p"; }
+
+  std::vector<std::string> TargetFunctions() const override {
+    return {Intrinsic::Log1p::Name(Intrinsic::S(Type))};
+  }
+
+  std::vector<std::vector<Intrinsic::Type>> SupportedVectorTypes()
+      const override {
+    return {
+        {Intrinsic::S(Type)},
+        {Intrinsic::V(Type, 2)},
+        {Intrinsic::V(Type, 4)},
+        {Intrinsic::V(Type, 8)},
+    };
+  }
+
+  llvm::Function* CreateDefinition(
+      llvm::Module& module, absl::string_view name,
+      absl::Span<const Intrinsic::Type> types) const override {
+    CHECK(types.size() == 1) << "Expected 1 type for log1p";
+    return Intrinsic::Log1p::CreateDefinition(&module, types.front()).value();
+  }
+};
+
+class ErfF32MathFunction final : public MathFunction {
+ public:
+  absl::string_view FunctionName() const override { return "xla.erf"; }
+
+  std::vector<std::string> TargetFunctions() const override {
+    return {Intrinsic::Erf::Name(Intrinsic::S(F32))};
+  }
+
+  std::vector<std::vector<Intrinsic::Type>> SupportedVectorTypes()
+      const override {
+    return {{Intrinsic::S(F32)},
+            {Intrinsic::V(F32, 2)},
+            {Intrinsic::V(F32, 4)},
+            {Intrinsic::V(F32, 8)}};
+  }
+
+  llvm::Function* CreateDefinition(
+      llvm::Module& module, absl::string_view name,
+      absl::Span<const Intrinsic::Type> types) const override {
+    CHECK(types.size() == 1) << "Expected 1 type for erf";
+    return Intrinsic::Erf::CreateDefinition(&module, types.front()).value();
+  }
+};
+
+MathFunctionLib::MathFunctionLib() {
+  math_functions_.push_back(std::make_unique<LdexpF64MathFunction>());
+  math_functions_.push_back(std::make_unique<ExpF64MathFunction>());
+  math_functions_.push_back(std::make_unique<FpextF32ToBf16MathFunction>());
+  math_functions_.push_back(std::make_unique<Log1pMathFunction<F16>>());
+  math_functions_.push_back(std::make_unique<Log1pMathFunction<F32>>());
+  math_functions_.push_back(std::make_unique<Log1pMathFunction<F64>>());
+  math_functions_.push_back(std::make_unique<ErfF32MathFunction>());
+}
 
 namespace {
 
@@ -110,234 +253,23 @@ GetCalledApproximatableFunctions(
 
 }  // anonymous namespace
 
-class LdexpF64MathFunction final : public MathFunction {
- public:
-  absl::string_view FunctionName() const override { return "ldexp"; }
-  std::vector<std::string> TargetFunctions() const override {
-    return {"xla.ldexp.f64.i32"};
-  }
-  std::vector<VectorType> SupportedVectorTypes() const override {
-    return {
-        {xla::F64, 1},
-        {xla::F64, 2},
-        {xla::F64, 4},
-        {xla::F64, 8},
-    };
-  }
-
-  std::string GenerateVectorizedFunctionName(
-      VectorType vector_type) const override {
-    if (vector_type.width == 1) {
-      return Intrinsic::Name<Intrinsic::Ldexp>(F64);
-    }
-    return Intrinsic::Name<Intrinsic::Ldexp>(F64, vector_type.width);
-  }
-
-  std::string GenerateMangledSimdName(VectorType vector_type) const override {
-    return math::GetMangledNamePrefix(/*is_masked=*/false, vector_type.width,
-                                      {math::VecParamCardinality::kVector,
-                                       math::VecParamCardinality::kVector});
-  }
-
-  llvm::Function* CreateDefinition(llvm::Module& module, absl::string_view name,
-                                   VectorType vector_type) const override {
-    llvm::Type* float_type =
-        llvm_ir::PrimitiveTypeToIrType(vector_type.dtype, module.getContext());
-    llvm::Type* vec_type = float_type;
-    if (vector_type.width > 1) {
-      vec_type = llvm::VectorType::get(float_type, vector_type.width, false);
-    }
-    return math::CreateLdexpF64(&module, vec_type);
-  }
-};
-
-class ExpF64MathFunction final : public MathFunction {
- public:
-  absl::string_view FunctionName() const override { return "exp"; }
-  std::vector<std::string> TargetFunctions() const override {
-    return {"xla.exp.f64"};
-  }
-  std::vector<VectorType> SupportedVectorTypes() const override {
-    return {
-        {xla::F64, 1},
-        {xla::F64, 2},
-        {xla::F64, 4},
-        {xla::F64, 8},
-    };
-  }
-
-  std::string GenerateVectorizedFunctionName(
-      VectorType vector_type) const override {
-    return math::ExpF64FunctionName(vector_type.width);
-  }
-
-  std::string GenerateMangledSimdName(VectorType vector_type) const override {
-    return math::GetMangledNamePrefix(/*is_masked=*/false, vector_type.width,
-                                      {math::VecParamCardinality::kVector});
-  }
-
-  llvm::Function* CreateDefinition(llvm::Module& module, absl::string_view name,
-                                   VectorType vector_type) const override {
-    llvm::Type* float_type =
-        llvm_ir::PrimitiveTypeToIrType(vector_type.dtype, module.getContext());
-    llvm::Type* vec_type = float_type;
-    if (vector_type.width > 1) {
-      vec_type = llvm::VectorType::get(float_type, vector_type.width, false);
-    }
-    return math::CreateExpF64(&module, vec_type);
-  }
-};
-
-class FpextF32ToBf16MathFunction final : public MathFunction {
- public:
-  absl::string_view FunctionName() const override {
-    return "xla.fptrunc.f32.to.bf16";
-  }
-
-  std::vector<std::string> TargetFunctions() const override {
-    return {"xla.fptrunc.f32.to.bf16"};
-  }
-
-  std::vector<VectorType> SupportedVectorTypes() const override {
-    return {
-        {xla::F32, 1},
-        {xla::F32, 2},
-        {xla::F32, 4},
-        {xla::F32, 8},
-    };
-  }
-
-  std::string GenerateVectorizedFunctionName(
-      VectorType vector_type) const override {
-    if (vector_type.width == 1) {
-      return Intrinsic::FpTrunc::Name(Intrinsic::S(F32), Intrinsic::S(BF16));
-    }
-    return Intrinsic::FpTrunc::Name(Intrinsic::V(F32, vector_type.width),
-                                    Intrinsic::V(BF16, vector_type.width));
-  }
-
-  std::string GenerateMangledSimdName(VectorType vector_type) const override {
-    return math::GetMangledNamePrefix(/*is_masked=*/false, vector_type.width,
-                                      {math::VecParamCardinality::kVector});
-  }
-
-  llvm::Function* CreateDefinition(llvm::Module& module, absl::string_view name,
-                                   VectorType vector_type) const override {
-    if (vector_type.width == 1) {
-      return Intrinsic::FpTrunc::CreateDefinition(&module, Intrinsic::S(F32),
-                                                  Intrinsic::S(BF16))
-          .value();
-    }
-    return Intrinsic::FpTrunc::CreateDefinition(
-               &module, Intrinsic::V(F32, vector_type.width),
-               Intrinsic::V(BF16, vector_type.width))
-        .value();
-  }
-};
-
-template <PrimitiveType Type>
-class Log1pMathFunction final : public MathFunction {
- public:
-  absl::string_view FunctionName() const override { return "xla.log1p"; }
-
-  std::vector<std::string> TargetFunctions() const override {
-    return {Intrinsic::Log1p::Name(Type)};
-  }
-
-  std::vector<VectorType> SupportedVectorTypes() const override {
-    std::vector<VectorType> vector_types;
-    for (size_t width : {1, 2, 4, 8}) {
-      vector_types.push_back({Type, width});
-    }
-    return vector_types;
-  }
-
-  std::string GenerateVectorizedFunctionName(
-      VectorType vector_type) const override {
-    return math::Log1pFunctionName(vector_type.width, vector_type.dtype);
-  }
-
-  std::string GenerateMangledSimdName(VectorType vector_type) const override {
-    return math::GetMangledNamePrefix(/*is_masked=*/false, vector_type.width,
-                                      {math::VecParamCardinality::kVector});
-  }
-
-  llvm::Function* CreateDefinition(llvm::Module& module, absl::string_view name,
-                                   VectorType vector_type) const override {
-    llvm::Type* float_type =
-        llvm_ir::PrimitiveTypeToIrType(vector_type.dtype, module.getContext());
-    llvm::Type* vec_type = float_type;
-    if (vector_type.width > 1) {
-      vec_type = llvm::VectorType::get(float_type, vector_type.width, false);
-    }
-    return math::CreateLog1p(&module, vec_type);
-  }
-};
-
-class ErfF32MathFunction final : public MathFunction {
- public:
-  absl::string_view FunctionName() const override { return "xla.erf"; }
-
-  std::vector<std::string> TargetFunctions() const override {
-    return {Intrinsic::Erf::Name(F32)};
-  }
-
-  std::vector<VectorType> SupportedVectorTypes() const override {
-    std::vector<VectorType> vector_types;
-    for (size_t width : {1, 2, 4, 8}) {
-      vector_types.push_back({F32, width});
-    }
-    return vector_types;
-  }
-
-  std::string GenerateVectorizedFunctionName(
-      VectorType vector_type) const override {
-    return math::ErfFunctionName(vector_type.width, vector_type.dtype);
-  }
-
-  std::string GenerateMangledSimdName(VectorType vector_type) const override {
-    return math::GetMangledNamePrefix(/*is_masked=*/false, vector_type.width,
-                                      {math::VecParamCardinality::kVector});
-  }
-
-  llvm::Function* CreateDefinition(llvm::Module& module, absl::string_view name,
-                                   VectorType vector_type) const override {
-    llvm::Type* float_type =
-        llvm_ir::PrimitiveTypeToIrType(vector_type.dtype, module.getContext());
-    llvm::Type* vec_type = float_type;
-    if (vector_type.width > 1) {
-      vec_type = llvm::VectorType::get(float_type, vector_type.width, false);
-    }
-    return math::CreateErf(&module, vec_type);
-  }
-};
-
-MathFunctionLib::MathFunctionLib() {
-  math_functions_.push_back(std::make_unique<LdexpF64MathFunction>());
-  math_functions_.push_back(std::make_unique<ExpF64MathFunction>());
-  math_functions_.push_back(std::make_unique<FpextF32ToBf16MathFunction>());
-  math_functions_.push_back(std::make_unique<Log1pMathFunction<F16>>());
-  math_functions_.push_back(std::make_unique<Log1pMathFunction<F32>>());
-  math_functions_.push_back(std::make_unique<Log1pMathFunction<F64>>());
-  math_functions_.push_back(std::make_unique<ErfF32MathFunction>());
-}
-
 std::vector<llvm::VecDesc> MathFunctionLib::Vectorizations() {
   std::vector<llvm::VecDesc> vec_descs;
   for (const auto& math_func : math_functions_) {
     for (const std::string& target_function : math_func->TargetFunctions()) {
       absl::string_view target_function_interned =
           math::StringInterner::Get().Intern(target_function);
-      for (const auto& vector_type : math_func->SupportedVectorTypes()) {
+      for (const auto& vector_types : math_func->SupportedVectorTypes()) {
         absl::string_view vec_name = math::StringInterner::Get().Intern(
-            math_func->GenerateVectorizedFunctionName(vector_type));
+            math_func->GenerateVectorizedFunctionName(vector_types));
+        size_t vector_width = vector_types.front().vector_width().value_or(1);
         llvm::VecDesc vec_desc = {
             target_function_interned,
             vec_name,
-            llvm::ElementCount::getFixed(vector_type.width),
+            llvm::ElementCount::getFixed(vector_width),
             false,
             math::StringInterner::Get().Intern(
-                math_func->GenerateMangledSimdName(vector_type)),
+                math_func->GenerateMangledSimdPrefix(vector_types)),
             std::nullopt};
         vec_descs.push_back(vec_desc);
         targets_[vec_name] = math_func->FunctionName();
@@ -347,10 +279,9 @@ std::vector<llvm::VecDesc> MathFunctionLib::Vectorizations() {
   return vec_descs;
 }
 
-void CreateDefinitionAndReplaceDeclaration(llvm::Module& module,
-                                           absl::string_view name,
-                                           MathFunction::VectorType vector_type,
-                                           MathFunction& math_func) {
+void CreateDefinitionAndReplaceDeclaration(
+    llvm::Module& module, absl::string_view name,
+    absl::Span<const Intrinsic::Type> types, MathFunction& math_func) {
   // The Vectorization pass may have already inserted a declaration
   // of this function that we need to rename and later remove to avoid
   // name collisions.
@@ -358,8 +289,7 @@ void CreateDefinitionAndReplaceDeclaration(llvm::Module& module,
   if (existing_func && existing_func->isDeclaration()) {
     existing_func->setName(std::string(name) + ".old_decl");
   }
-  llvm::Function* definition =
-      math_func.CreateDefinition(module, name, vector_type);
+  llvm::Function* definition = math_func.CreateDefinition(module, name, types);
   definition->setLinkage(llvm::Function::InternalLinkage);
   definition->addFnAttr(llvm::Attribute::AlwaysInline);
   llvm::verifyFunction(*definition);
@@ -382,11 +312,20 @@ absl::flat_hash_set<absl::string_view> MathFunctionLib::RewriteMathFunctions(
        GetCalledApproximatableFunctions(module, targets_)) {
     for (const auto& math_func : math_functions_) {
       if (math_func->FunctionName() == function_name) {
-        for (const auto& vector_type : math_func->SupportedVectorTypes()) {
-          if (dtypes.contains(vector_type.dtype)) {
+        for (const auto& types : math_func->SupportedVectorTypes()) {
+          auto vector_type = types.front();
+          // All types must have the same vector width.
+          // This could be relaxed in the future.
+          CHECK(std::all_of(types.begin(), types.end(),
+                            [&](const Intrinsic::Type& type) {
+                              return type.vector_width() ==
+                                     vector_type.vector_width();
+                            }))
+              << "All types must have the same vector width.";
+          if (dtypes.contains(vector_type.element_type())) {
             absl::string_view name = math::StringInterner::Get().Intern(
-                math_func->GenerateVectorizedFunctionName(vector_type));
-            CreateDefinitionAndReplaceDeclaration(module, name, vector_type,
+                math_func->GenerateVectorizedFunctionName(types));
+            CreateDefinitionAndReplaceDeclaration(module, name, types,
                                                   *math_func);
             replaced_functions.insert(name);
           }
@@ -397,8 +336,34 @@ absl::flat_hash_set<absl::string_view> MathFunctionLib::RewriteMathFunctions(
 
   CHECK(!llvm::verifyModule(module)) << "Module is invalid after optimization\n"
                                      << llvm_ir::DumpToString(&module);
-
   return replaced_functions;
 }
 
+std::string MathFunction::GenerateVectorizedFunctionName(
+    absl::Span<const Intrinsic::Type> types) const {
+  std::vector<std::string> names;
+  std::transform(types.begin(), types.end(), std::back_inserter(names),
+                 std::mem_fn(&Intrinsic::Type::name));
+  return absl::StrCat("xla.", FunctionName(), ".", absl::StrJoin(names, "."));
+}
+std::string MathFunction::GenerateMangledSimdPrefix(
+    absl::Span<const Intrinsic::Type> types) const {
+  std::vector<math::VecParamCardinality> param_cardinalities;
+  std::vector<std::string> names;
+  auto front = types.front();
+  for (const auto& type : types) {
+    if (type.is_scalar()) {
+      param_cardinalities.push_back(math::VecParamCardinality::kScalar);
+    } else {
+      param_cardinalities.push_back(math::VecParamCardinality::kVector);
+    }
+    names.push_back(Intrinsic::ScalarName(type.element_type()));
+    CHECK(type.vector_width() == front.vector_width())
+        << "All types must have the same vector width.";
+  }
+  return absl::StrCat(
+      math::GetMangledNamePrefix(IsMasked(), front.vector_width().value_or(1),
+                                 param_cardinalities),
+      "_", absl::StrJoin(names, "."));
+}
 }  // namespace xla::codegen

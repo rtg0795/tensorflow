@@ -31,8 +31,18 @@ enum class VecParamCardinality {
   kScalar,
   kVector,
   kLinear,
+  kLinearRef,
+  kLinearVal,
+  kLinearUVal,
+  kLinearPos,
+  kLinearValPos,
+  kLinearRefPos,
+  kLinearUValPos,
+  kUniform,
 };
 
+// Follows LLVM parsing:
+// https://github.com/llvm/llvm-project/blob/5301f4c469/llvm/lib/IR/VFABIDemangler.cpp#L512
 constexpr absl::string_view VecParamCardinalityToString(
     VecParamCardinality param_cardinality) {
   switch (param_cardinality) {
@@ -42,6 +52,22 @@ constexpr absl::string_view VecParamCardinalityToString(
       return "v";
     case VecParamCardinality::kLinear:
       return "l";
+    case VecParamCardinality::kLinearRef:
+      return "R";
+    case VecParamCardinality::kLinearVal:
+      return "L";
+    case VecParamCardinality::kLinearUVal:
+      return "U";
+    case VecParamCardinality::kLinearPos:
+      return "ls";
+    case VecParamCardinality::kLinearValPos:
+      return "Ls";
+    case VecParamCardinality::kLinearRefPos:
+      return "Rs";
+    case VecParamCardinality::kLinearUValPos:
+      return "Us";
+    case VecParamCardinality::kUniform:
+      return "u";
   }
 }
 

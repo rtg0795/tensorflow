@@ -120,7 +120,7 @@ class LowerLog1pPattern : public mlir::OpRewritePattern<mlir::math::Log1pOp> {
 
     auto log1p_decl = GetOrInsertDeclaration(
         rewriter, module_op_,
-        codegen::math::Log1pFunctionName(1, primitive_type),
+        codegen::Intrinsic::Log1p::Name(Intrinsic::S(primitive_type)),
         rewriter.getFunctionType(type, type));
     auto call_op = b.create<mlir::func::CallOp>(log1p_decl, op.getOperand());
     rewriter.replaceOp(op, call_op->getResults());
@@ -150,7 +150,8 @@ class LowerErfPattern : public mlir::OpRewritePattern<mlir::math::ErfOp> {
           b.create<mlir::arith::ExtFOp>(f32_type, op.getOperand());
 
       auto erf_decl = GetOrInsertDeclaration(
-          rewriter, module_op_, codegen::math::ErfFunctionName(1, F32),
+          rewriter, module_op_,
+          codegen::Intrinsic::Erf::Name(Intrinsic::S(F32)),
           rewriter.getFunctionType(f32_type, f32_type));
       auto call_op = b.create<mlir::func::CallOp>(erf_decl, input_value);
 

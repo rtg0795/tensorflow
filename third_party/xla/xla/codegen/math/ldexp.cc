@@ -43,7 +43,8 @@ std::string Intrinsic::Ldexp::Name(PrimitiveType type) {
 }
 
 std::string Intrinsic::Ldexp::Name(PrimitiveType type, size_t vector_width) {
-  return absl::StrCat("xla.ldexp.", VectorName(type, vector_width), ".i32");
+  return absl::StrCat("xla.ldexp.", VectorName(type, vector_width), ".v",
+                      vector_width, "i32");
 }
 
 namespace math {

@@ -17,22 +17,22 @@ limitations under the License.
 #define XLA_CODEGEN_MATH_ERF_H_
 
 #include <cstddef>
-#include <cstdint>
 #include <string>
 
+#include "absl/status/statusor.h"
+#include "absl/strings/string_view.h"
 #include "llvm/IR/Function.h"
 #include "xla/codegen/math/intrinsic.h"
 #include "xla/xla_data.pb.h"
 
 namespace xla::codegen {
 
-class Intrinsic::Erf {
+class Intrinsic::Erf : public intrinsics::IntrinsicBase<Erf> {
  public:
-  static std::string Name(PrimitiveType type);
-  static std::string Name(PrimitiveType type, int64_t vector_width);
+  static constexpr absl::string_view kName = "erf";
 
-  static llvm::Function* GetOrInsertDeclaration(llvm::Module* module,
-                                                PrimitiveType type);
+  static absl::StatusOr<llvm::Function*> CreateDefinition(llvm::Module* module,
+                                                          Intrinsic::Type type);
 };
 
 namespace math {

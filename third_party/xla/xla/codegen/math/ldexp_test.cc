@@ -63,7 +63,7 @@ TEST(LdexpTest, SclarIninsic) {
 }
 
 TEST(LdexpTest, VectorIninsic) {
-  EXPECT_EQ(Intrinsic::Name<Intrinsic::Ldexp>(F64, 4), "xla.ldexp.v4f64.i32");
+  EXPECT_EQ(Intrinsic::Name<Intrinsic::Ldexp>(F64, 4), "xla.ldexp.v4f64.v4i32");
 }
 
 TEST(LdexpTest, EmitLdexpF64) {

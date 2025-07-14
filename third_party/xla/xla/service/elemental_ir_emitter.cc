@@ -2646,8 +2646,8 @@ absl::StatusOr<llvm::Value*> ElementalIrEmitter::EmitLog(
 
 absl::StatusOr<llvm::Value*> ElementalIrEmitter::EmitLog1p(
     PrimitiveType prim_type, llvm::Value* value) {
-  llvm::Function* log1p =
-      Intrinsic::GetOrInsertDeclaration<Intrinsic::Log1p>(module_, prim_type);
+  llvm::Function* log1p = Intrinsic::Log1p::GetOrInsertDeclaration(
+      module_, Intrinsic::S(prim_type));
   return b_->CreateCall(log1p, {value});
 }
 

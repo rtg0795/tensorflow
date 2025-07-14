@@ -128,9 +128,8 @@ absl::StatusOr<llvm::Value*> EmitErf(llvm::Module* module,
   llvm::Type* type = prim_type == F16 ? b.getFloatTy() : value->getType();
   if (type == b.getFloatTy()) {
     llvm::Value* x = b.CreateFPCast(value, type);
-    llvm::Function* erf =
-        codegen::Intrinsic::GetOrInsertDeclaration<codegen::Intrinsic::Erf>(
-            module, F32);
+    llvm::Function* erf = codegen::Intrinsic::Erf::GetOrInsertDeclaration(
+        module, codegen::Intrinsic::S(F32));
     llvm::Value* result = b.CreateCall(erf, {x});
     return b.CreateFPCast(result, value->getType());
   }

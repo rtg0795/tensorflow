@@ -21,10 +21,12 @@ limitations under the License.
 #include <optional>
 #include <string>
 #include <variant>
+#include <vector>
 
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
+#include "absl/strings/str_join.h"
 #include "absl/strings/string_view.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Module.h"
@@ -93,7 +95,6 @@ class Intrinsic {
   class Type : public std::variant<Scalar, Vec> {
    public:
     using std::variant<Scalar, Vec>::variant;
-
     Type(PrimitiveType type, std::optional<size_t> vector_width);
 
     std::string name() const;
@@ -109,8 +110,10 @@ class Intrinsic {
   };
 
   // Shortened builders for the scalar and vector types defined above.
-  static Type S(PrimitiveType type) { return Scalar{type}; }
-  static Type V(PrimitiveType type, size_t width) { return Vec{type, width}; }
+  static constexpr Type S(PrimitiveType type) { return Scalar{type}; }
+  static constexpr Type V(PrimitiveType type, size_t width) {
+    return Vec{type, width};
+  }
 
   // Verifies that the two types have the same width.
   static absl::Status VerifySameWidth(const Type& a, const Type& b);
@@ -125,62 +128,24 @@ class Intrinsic {
   // Returns the MLIR type for the given intrinsic type.
   static mlir::Type TypeToIrType(Type type, mlir::MLIRContext& context);
 
-  // Returns the name of the scalar intrinsic for the given data type.
-  template <typename Intrinsic>
-  static std::string Name(PrimitiveType t0) {
-    return Intrinsic::Name(t0);
-  }
-
   // Returns the name of the vector intrinsic for the given data type.
-  template <typename Intrinsic>
-  static std::string Name(PrimitiveType t0, int64_t vector_width) {
-    return Intrinsic::Name(t0, vector_width);
-  }
-
-  // Returns the name of the scalar intrinsic for the given data types.
-  template <typename Intrinsic>
-  static std::string Name(PrimitiveType t0, PrimitiveType t1) {
-    return Intrinsic::Name(t0, t1);
-  }
-
-  // Returns the name of the vector intrinsic for the given data types (argument
-  // and result types have the same vector width).
-  template <typename Intrinsic>
-  static std::string Name(PrimitiveType t0, PrimitiveType t1,
-                          int64_t vector_width) {
-    return Intrinsic::Name(t0, t1, vector_width);
+  template <typename Intrinsic, typename... Args>
+  static std::string Name(Args... args) {
+    return Intrinsic::Name(args...);
   }
 
   // Returns the declaration of the scalar intrinsic for the given data type.
-  template <typename Intrinsic>
+  template <typename Intrinsic, typename... Args>
   static llvm::Function* GetOrInsertDeclaration(llvm::Module* module,
-                                                PrimitiveType t0) {
-    return Intrinsic::GetOrInsertDeclaration(module, t0);
-  }
-
-  // Returns the declaration of the scalar intrinsic for the given data types.
-  template <typename Intrinsic>
-  static llvm::Function* GetOrInsertDeclaration(llvm::Module* module,
-                                                PrimitiveType t0,
-                                                PrimitiveType t1) {
-    return Intrinsic::GetOrInsertDeclaration(module, t0, t1);
+                                                Args... args) {
+    return Intrinsic::GetOrInsertDeclaration(module, args...);
   }
 
   // Creates the definition of the vector intrinsic for the given data types.
-  template <typename Intrinsic>
+  template <typename Intrinsic, typename... Args>
   static absl::StatusOr<llvm::Function*> CreateDefinition(llvm::Module* module,
-                                                          PrimitiveType from,
-                                                          PrimitiveType to,
-                                                          size_t vector_width) {
-    return Intrinsic::CreateDefinition(module, from, to, vector_width);
-  }
-
-  // Creates the definition of the vector intrinsic for the given data types.
-  template <typename Intrinsic>
-  static absl::StatusOr<llvm::Function*> CreateDefinition(llvm::Module* module,
-                                                          PrimitiveType type,
-                                                          size_t vector_width) {
-    return Intrinsic::CreateDefinition(module, type, vector_width);
+                                                          Args... args) {
+    return Intrinsic::CreateDefinition(module, args...);
   }
 
   static std::string ScalarName(PrimitiveType type) {
@@ -200,31 +165,30 @@ class Intrinsic {
 
 namespace intrinsics {
 template <typename Derived>
-class UnaryIntrinsic {
+class IntrinsicBase {
  public:
-  static std::string Name(PrimitiveType type) {
+  template <typename... Types>
+  static std::string Name(Types... args) {
     return absl::StrCat("xla.", Derived::kName, ".",
-                        Intrinsic::ScalarName(type));
+                        absl::StrJoin({args.name()...}, "."));
   }
 
-  static std::string Name(PrimitiveType type, int64_t vector_width) {
-    return absl::StrCat("xla.", Derived::kName, ".",
-                        Intrinsic::VectorName(type, vector_width));
-  }
-
+  template <typename... Args>
   static llvm::Function* GetOrInsertDeclaration(llvm::Module* module,
-                                                PrimitiveType prim_type) {
-    auto* type =
-        llvm_ir::PrimitiveTypeToIrType(prim_type, module->getContext());
-    auto* function_type = llvm::FunctionType::get(type, {type}, false);
+                                                Args... args) {
+    static_assert(sizeof...(Args) > 0, "At least one argument is required.");
+    static_assert((std::is_convertible_v<Args, Intrinsic::Type> && ...),
+                  "All arguments must be Intrinsic::Type.");
+    std::vector<llvm::Type*> types{
+        Intrinsic::TypeToIrType(args..., module->getContext())};
+    auto* function_type = llvm::FunctionType::get(types.front(), types, false);
     return llvm::cast<llvm::Function>(
-        module->getOrInsertFunction(Name(prim_type), function_type)
-            .getCallee());
+        module->getOrInsertFunction(Name(args...), function_type).getCallee());
   }
 
   static absl::StatusOr<llvm::Function*> CreateDefinition(
-      llvm::Module* module, PrimitiveType prim_type, size_t vector_width) {
-    return Derived::CreateDefinition(module, prim_type, vector_width);
+      llvm::Module* module, const Intrinsic::Type type) {
+    return Derived::CreateDefinition(module, type);
   }
 };
 }  // namespace intrinsics

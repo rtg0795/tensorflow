@@ -15,12 +15,7 @@ limitations under the License.
 
 #include "xla/codegen/math/erf.h"
 
-#include <cstddef>
-#include <cstdint>
-#include <string>
-
 #include "absl/log/check.h"
-#include "absl/strings/str_cat.h"
 #include "llvm/IR/Argument.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Constants.h"
@@ -109,33 +104,10 @@ static llvm::Value* EmitErfF32(llvm::IRBuilderBase* b, llvm::Value* x) {
   return result;
 }
 
-std::string Intrinsic::Erf::Name(PrimitiveType type) {
-  return absl::StrCat("xla.erf.", ScalarName(type));
-}
-
-std::string Intrinsic::Erf::Name(PrimitiveType type, int64_t vector_width) {
-  return absl::StrCat(Name(type), ".v", vector_width);
-}
-
-llvm::Function* Intrinsic::Erf::GetOrInsertDeclaration(llvm::Module* module,
-                                                       PrimitiveType type) {
-  auto* llvm_type = llvm_ir::PrimitiveTypeToIrType(type, module->getContext());
-  auto* function_type = llvm::FunctionType::get(llvm_type, {llvm_type}, false);
-  return llvm::cast<llvm::Function>(
-      module->getOrInsertFunction(Name(type), function_type).getCallee());
-}
-
-namespace math {
-
-std::string ErfFunctionName(size_t num_elements, PrimitiveType type) {
-  if (num_elements > 1) {
-    return Intrinsic::Erf::Name(type, num_elements);
-  }
-
-  return Intrinsic::Erf::Name(type);
-}
-
-llvm::Function* CreateErf(llvm::Module* module, llvm::Type* type) {
+absl::StatusOr<llvm::Function*> Intrinsic::Erf::CreateDefinition(
+    llvm::Module* module, const Intrinsic::Type intrinsic_type) {
+  llvm::Type* type =
+      Intrinsic::TypeToIrType(intrinsic_type, module->getContext());
   CHECK(type != nullptr);
   CHECK(type->isFloatTy() ||
         (type->isVectorTy() && type->getScalarType()->isFloatTy()))
@@ -149,13 +121,11 @@ llvm::Function* CreateErf(llvm::Module* module, llvm::Type* type) {
     num_elements = vec_ty->getElementCount().getKnownMinValue();
   }
 
-  PrimitiveType primitive_type = llvm_ir::PrimitiveTypeFromIrType(type);
-
   llvm::FunctionType* function_type =
       llvm::FunctionType::get(type, {type}, false);
   llvm::Function* func = llvm::dyn_cast<llvm::Function>(
       module
-          ->getOrInsertFunction(ErfFunctionName(num_elements, primitive_type),
+          ->getOrInsertFunction(Intrinsic::Erf::Name(intrinsic_type),
                                 function_type)
           .getCallee());
 
@@ -170,5 +140,4 @@ llvm::Function* CreateErf(llvm::Module* module, llvm::Type* type) {
   return func;
 }
 
-}  // namespace math
 }  // namespace xla::codegen

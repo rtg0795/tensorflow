@@ -28,7 +28,7 @@ limitations under the License.
 namespace xla::codegen {
 
 // XLA intrinsic for computing the reciprocal square root (1/sqrt(x)).
-class Intrinsic::Rsqrt : public intrinsics::UnaryIntrinsic<Intrinsic::Rsqrt> {
+class Intrinsic::Rsqrt : public intrinsics::IntrinsicBase<Intrinsic::Rsqrt> {
  public:
   static constexpr absl::string_view kName = "rsqrt";
 
@@ -38,8 +38,8 @@ class Intrinsic::Rsqrt : public intrinsics::UnaryIntrinsic<Intrinsic::Rsqrt> {
   // Based on Eigen's implementations, with some modifications:
   // https://eigen.tuxfamily.org/dox-devel/arch_2AVX512_2MathFunctions_8h_source.html
   // Assumes AVX512 is available for F64 and <16 x float> inputs.
-  static absl::StatusOr<llvm::Function*> CreateDefinition(
-      llvm::Module* module, PrimitiveType prim_type, size_t vector_width);
+  static absl::StatusOr<llvm::Function*> CreateDefinition(llvm::Module* module,
+                                                          Intrinsic::Type type);
 };
 
 }  // namespace xla::codegen
