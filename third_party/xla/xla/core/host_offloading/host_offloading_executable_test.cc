@@ -26,6 +26,7 @@ limitations under the License.
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/string_view.h"
+#include "absl/synchronization/notification.h"
 #include "absl/types/span.h"
 #include "xla/backends/cpu/nanort/nanort_executable.h"
 #include "xla/core/host_offloading/host_offloading_buffer.h"
@@ -487,6 +488,54 @@ TEST(HostOffloadingNanortTest, DeviceAssignment) {
   ASSERT_EQ(host_offloading_nanort_executable->device_assignment()
                 ->computation_count(),
             1);
+}
+
+TEST_P(HostOffloadingRuntimeExecutableTest, ExecuteWithOnResultReady) {
+  std::string str = R"(
+    HloModule add
+
+    ENTRY %main {
+      %p0 = f32[4] parameter(0)
+      ROOT %add = f32[4] add(%p0, %p0)
+    }
+  )";
+
+  HostOffloadingExecutableProto::ExecutableType
+      host_offloading_executable_type = GetParam();
+
+  if (host_offloading_executable_type ==
+      HostOffloadingExecutableProto::EXECUTABLE_TYPE_PJRT) {
+    GTEST_SKIP() << "OnResultReady is not supported in PJRT executable";
+  }
+
+  TF_ASSERT_OK_AND_ASSIGN(
+      auto computation,
+      CompileFromString(str, host_offloading_executable_type));
+
+  Shape shape = ShapeUtil::MakeShape(xla::PrimitiveType::F32, {4});
+
+  auto input_literal = LiteralUtil::CreateR1<float>({1., 2., 3., 4.});
+  auto result_literal = LiteralUtil::CreateR1<float>({0., 0., 0., 0.});
+
+  std::vector<ShapeTree<HostOffloadingBuffer>> parameters = {
+      ShapeTree<HostOffloadingBuffer>(
+          shape, HostOffloadingBuffer(input_literal.data<float>())),
+  };
+  ShapeTree<HostOffloadingBuffer> result(
+      shape, HostOffloadingBuffer(result_literal.data<float>()));
+
+  absl::Notification notification;
+
+  TF_EXPECT_OK(computation->Execute(
+      parameters, result, EmptyExecuteOptions(),
+      [&result_literal, &notification](absl::Status status) {
+        EXPECT_OK(status);
+        EXPECT_THAT(result_literal.data<float>(),
+                    ElementsAreArray({2, 4, 6, 8}));
+        notification.Notify();
+      }));
+
+  notification.WaitForNotification();
 }
 
 //===----------------------------------------------------------------------===//

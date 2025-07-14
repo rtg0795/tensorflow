@@ -66,14 +66,9 @@ class HostOffloadingExecutable {
  public:
   virtual ~HostOffloadingExecutable() = default;
 
-  // A callback that might be called by the host offloading executable to
-  // signal the readiness of the result buffer so that the caller can start
-  // reading the result buffer memory before the whole computation is finished.
-  //
-  // This callback is optional, and not all host offloading executables will
-  // use it. The caller must assume that all buffers are ready when host
-  // offloading executable completes.
-  using OnResultReady = absl::AnyInvocable<void(const ShapeIndex&)>;
+  // A callback that gets called by the host offloading executable when the
+  // computation is done.
+  using OnResultReady = absl::AnyInvocable<void(absl::Status)>;
 
   struct ExecuteOptions {
     int32_t device_index;

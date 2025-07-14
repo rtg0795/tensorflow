@@ -148,7 +148,7 @@ HostOffloadingNanoRtExecutable::LoadFromProto(
   });
 
   // We keep program shape and alias config of the original HLO module and not
-  // the destination-passing-styFle module with extra output parameters.
+  // the destination-passing-style module with extra output parameters.
   TF_ASSIGN_OR_RETURN(
       ProgramShape program_shape,
       ProgramShape::FromProto(proto.hlo_module().host_program_shape()));
@@ -199,7 +199,7 @@ HostOffloadingNanoRtExecutable::LoadFromProto(
 absl::Status HostOffloadingNanoRtExecutable::Execute(
     absl::Span<const ShapeTree<HostOffloadingBuffer>> parameters,
     const xla::ShapeTree<HostOffloadingBuffer>& result,
-    const ExecuteOptions& execute_options, OnResultReady) {
+    const ExecuteOptions& execute_options, OnResultReady on_result_ready) {
   VLOG(3) << "Execute NanoRt host offloading executable: name=" << name_;
 
   TraceMe trace([&] {
@@ -251,17 +251,27 @@ absl::Status HostOffloadingNanoRtExecutable::Execute(
 
   nanort_execute_options.set_device_assignment(device_assignment_.get());
 
-  xla::cpu::NanoRtExecutable::ManagedTemp<128> temp_buffer(
-      executable_->temp_buffer_size());
+  auto temp_buffer =
+      std::make_unique<xla::cpu::NanoRtExecutable::ManagedTemp<128>>(
+          executable_->temp_buffer_size());
+
   auto execute_event = executable_->Execute(
-      arguments, nanort_results, temp_buffer, nanort_execute_options);
+      arguments, nanort_results, *temp_buffer, nanort_execute_options);
 
-  // TODO(b/409478175): Once OnResultReady is implemented we can use it for non
-  // blocking execution.
-  tsl::BlockUntilReady(execute_event);
-
-  if (execute_event.IsError()) {
-    return execute_event.GetError();
+  if (on_result_ready != nullptr) {
+    execute_event.AndThen(
+        [on_result_ready = std::move(on_result_ready),
+         // Keep arguments to Execute alive until the computation is done.
+         arguments = std::move(arguments),
+         nanort_results = std::move(nanort_results),
+         temp_buffer = std::move(temp_buffer),
+         nanort_execute_options = std::move(nanort_execute_options)](
+            absl::Status status) mutable { on_result_ready(status); });
+  } else {
+    tsl::BlockUntilReady(execute_event);
+    if (execute_event.IsError()) {
+      return execute_event.GetError();
+    }
   }
 
   return absl::OkStatus();
