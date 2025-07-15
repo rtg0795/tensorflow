@@ -596,7 +596,7 @@ ENTRY main {
   CallInliner call_inliner(
       /*single_call_site=*/false, /*update_domain=*/false,
       /*composites_to_preserve=*/{}, /*uniquify_channel_ids=*/true);
-  EXPECT_THAT(call_inliner.Run(m.get()), ::tsl::testing::IsOkAndHolds(true));
+  ASSERT_THAT(call_inliner.Run(m.get()), ::tsl::testing::IsOkAndHolds(true));
 
   auto ag = m->entry_computation()->root_instruction()->operand(0);
   auto ag2 = m->entry_computation()->root_instruction()->operand(1);
@@ -819,8 +819,7 @@ ENTRY main {
 
   TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<HloModule> m,
                           ParseAndReturnVerifiedModule(hlo));
-  CallInliner call_inliner;
-  EXPECT_THAT(call_inliner.Run(m.get()), ::tsl::testing::IsOkAndHolds(true));
+  ASSERT_THAT(CallInliner().Run(m.get()), ::tsl::testing::IsOkAndHolds(true));
 
   auto root = m->entry_computation()->root_instruction();
   EXPECT_THAT(root, op::While());
@@ -927,7 +926,7 @@ ENTRY main {
                            /*uniquify_channel_ids=*/false,
                            /*should_inline=*/inline_trivial_only);
 
-  EXPECT_THAT(call_inliner.Run(m.get()), ::tsl::testing::IsOkAndHolds(true));
+  ASSERT_THAT(call_inliner.Run(m.get()), ::tsl::testing::IsOkAndHolds(true));
   EXPECT_THAT(m->entry_computation()->root_instruction(),
               op::Subtract(op::Call(op::Parameter(0)), op::Parameter(0)));
 }
