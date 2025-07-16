@@ -2897,6 +2897,10 @@ absl::Status GpuCompiler::RunPostSchedulingPipelines(
                    module->config().debug_options().xla_ignore_channel_id(),
                    HloVerifierOpts{}.VerifyInstructionNameUnchanged());
   }
+  AddHloVerifier(&main_pipeline, /*ignore_channel_id=*/false,
+                 HloVerifierOpts{}
+                     .VerifyInstructionNameUnchanged()
+                     .WithVerifyNoCollectiveDeadlocks(true));
   return main_pipeline.Run(module).status();
 }
 
