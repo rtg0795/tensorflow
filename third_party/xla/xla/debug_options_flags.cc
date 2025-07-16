@@ -1116,8 +1116,8 @@ void MakeDebugOptionsFlags(std::vector<tsl::Flag>* flag_list,
       "xla_gpu_autotune_level",
       int32_setter_for(&DebugOptions::set_xla_gpu_autotune_level),
       debug_options->xla_gpu_autotune_level(),
-      "Set GEMM and Convolution auto-tuning level. 0 = off; 1 = on; 2 = "
-      "on+init; 3 = on+init+reinit; 4 = on+init+reinit+check; "
+      "[Stable] Set GEMM and Convolution auto-tuning level. 0 = off; 1 = on; "
+      "2 = on+init; 3 = on+init+reinit; 4 = on+init+reinit+check; "
       "5 = on+init+reinit+check and skip WRONG_RESULT solutions. See also "
       "the related flag xla_gpu_autotune_gemm_rtol. Remark that, setting the "
       "level to 5 only makes sense if you are sure that the reference (first "
@@ -1861,8 +1861,8 @@ void MakeDebugOptionsFlags(std::vector<tsl::Flag>* flag_list,
       tsl::Flag("xla_gpu_triton_gemm_any",
                 bool_setter_for(&DebugOptions::set_xla_gpu_triton_gemm_any),
                 debug_options->xla_gpu_triton_gemm_any(),
-                "Use Triton-based matrix multiplication for any GEMM it "
-                "supports without filtering only faster ones. To make sure "
+                "[Stable] Use Triton-based matrix multiplication for any GEMM "
+                "it supports without filtering only faster ones. To make sure "
                 "only triton gemm is chosen by the autotuner run with "
                 "`xla_gpu_cublas_fallback` set to false."));
   flag_list->push_back(tsl::Flag(
@@ -2540,6 +2540,21 @@ xla::DebugOptions GetDebugOptionsFromFlags() {
                                      /*reset_envvar=*/true);
   }
   return *flag_values;
+}
+
+FlagStatus GetFlagStatus(absl::string_view flag_name) {
+  static const std::vector<std::string>* kStableFlags =
+      new std::vector<std::string>({
+          // go/keep-sorted start
+          "xla_gpu_autotune_level", "xla_gpu_triton_gemm_any",
+          // go/keep-sorted end
+      });
+  static const std::vector<std::string>* kDeprecatedFlags =
+      new std::vector<std::string>();
+  return absl::c_linear_search(*kStableFlags, flag_name) ? FlagStatus::kStable
+         : absl::c_linear_search(*kDeprecatedFlags, flag_name)
+             ? FlagStatus::kDeprecated
+             : FlagStatus::kExperimental;
 }
 
 void ResetThreadLocalFuel() {
