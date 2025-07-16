@@ -29,6 +29,7 @@ limitations under the License.
 #include <variant>
 #include <vector>
 
+#include "absl/base/attributes.h"
 #include "absl/container/inlined_vector.h"
 #include "absl/functional/function_ref.h"
 #include "absl/log/check.h"
@@ -1172,11 +1173,12 @@ class ShapeUtil {
       Shape* shape, Fn&& fn, ShapeIndex* index) {
     TF_RETURN_IF_ERROR(fn(shape, *index));
     if (shape->IsTuple()) {
-      for (int64_t i = 0, e = ShapeUtil::TupleElementCount(*shape); i < e;
-           ++i) {
+      Shape* tuple_shape = shape->mutable_tuple_shapes()->data();
+      int64_t tuple_count = ShapeUtil::TupleElementCount(*shape);
+      for (int64_t i = 0; i < tuple_count; ++i, ++tuple_shape) {
         index->push_back(i);
-        TF_RETURN_IF_ERROR(ForEachMutableSubshapeWithStatusHelper(
-            shape->mutable_tuple_shapes(i), fn, index));
+        TF_RETURN_IF_ERROR(
+            ForEachMutableSubshapeWithStatusHelper(tuple_shape, fn, index));
         index->pop_back();
       }
     }
@@ -1189,11 +1191,12 @@ class ShapeUtil {
   static absl::Status ForEachMutableSubshapePostOrderWithStatusHelper(
       Shape* shape, Fn&& fn, ShapeIndex* index) {
     if (shape->IsTuple()) {
-      for (int64_t i = 0, e = ShapeUtil::TupleElementCount(*shape); i < e;
-           ++i) {
+      Shape* tuple_shape = shape->mutable_tuple_shapes()->data();
+      int64_t tuple_count = ShapeUtil::TupleElementCount(*shape);
+      for (int64_t i = 0; i < tuple_count; ++i, ++tuple_shape) {
         index->push_back(i);
         TF_RETURN_IF_ERROR(ForEachMutableSubshapePostOrderWithStatusHelper(
-            shape->mutable_tuple_shapes(i), fn, index));
+            tuple_shape, fn, index));
         index->pop_back();
       }
     }
