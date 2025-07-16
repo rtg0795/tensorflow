@@ -5623,7 +5623,11 @@ absl::Status SpmdPartitioner::PreprocessSharding(
           (hlo->opcode() != HloOpcode::kCustomCall ||
            GetCustomCallPartitioner(hlo->custom_call_target()) == nullptr)) {
         TF_RET_CHECK(hlo->has_sharding())
-            << "Side-effect HLO must have sharding: " << hlo->ToString();
+            << "Side-effect HLO must have sharding: "
+            << hlo->ToString()
+            // TODO: b/432201708 - Remove this once Shardy is stable in JAX.
+            << "If this is a custom call named 'xla.sdy.*', please file a bug "
+            << "against the OpenXLA Shardy team.";
         TF_RET_CHECK(!HasReplicatedSharding(hlo->sharding()) ||
                      CanSideEffectingHaveReplicatedSharding(hlo))
             << "side-effect HLO cannot have a replicated sharding: "

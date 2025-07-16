@@ -75,7 +75,12 @@ mlir::LogicalResult rewriteShardingCustomCall(
   }
   TensorShardingAttr sharding = mlir::sdy::getSharding(op->getResult(0));
   if (!sharding) {
-    op.emitError() << "expected CustomCallOp with a sharding attribute";
+    op.emitError()
+        << "expected CustomCallOp with a sharding attribute. "
+        // TODO: b/432201708 - Remove this once Shardy is stable in JAX.
+        << "If you are a JAX user hitting this, please file a bug against the "
+        << "OpenXLA Shardy team. This shouldn't happen to you.";
+
     return mlir::failure();
   }
 
