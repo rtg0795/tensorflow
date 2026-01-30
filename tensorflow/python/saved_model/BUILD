@@ -1,8 +1,9 @@
 # Description:
 # TensorFlow SavedModel.
 
+load("//learning/brain/contrib/hub:tfhub_build_defs.bzl", "tfhub_inmemory_cc_test")
 load("//tensorflow:strict.default.bzl", "py_strict_library")
-load("//tensorflow:tensorflow.bzl", "if_google", "tf_cc_test")
+load("//tensorflow:tensorflow.bzl", "if_google")
 load("//tensorflow:tensorflow.default.bzl", "cuda_py_strict_test", "tf_py_strict_test", "tf_pybind_cc_library_wrapper", "tf_python_pybind_extension")
 
 package(
@@ -1058,7 +1059,7 @@ tf_py_strict_test(
 
 # copybara:uncomment_begin(google-only)
 #
-# tf_cc_test(
+# tfhub_inmemory_cc_test(
 #     name = "lineage_logging_test",
 #     srcs = ["lineage_logging_test.cc"],
 #     deps = [
